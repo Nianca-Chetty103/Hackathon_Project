@@ -1,15 +1,340 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:eduvos_app/main.dart';
+import 'package:eduvos_app/AdminDashboard.dart';
+import 'package:eduvos_app/bursaries.dart';
+import 'package:eduvos_app/Home.dart';
+import 'package:eduvos_app/Login.dart';
+import 'package:eduvos_app/ProfileSettings.dart';
+import 'package:eduvos_app/auth_api.dart';
+import 'package:eduvos_app/community.dart';
+import 'package:eduvos_app/feature_api.dart';
+import 'package:eduvos_app/tank.dart';
+import 'package:image_picker/image_picker.dart';
+
+final _featureChannel = MethodChannel('eduvos/features');
+List<Map<String, dynamic>> _testProducts = [];
+List<Map<String, dynamic>> _testServices = [];
+List<Map<String, dynamic>> _testIdeas = [];
+List<Map<String, dynamic>> _testCommunities = [];
+List<Map<String, dynamic>> _testBursaries = [];
+Map<String, dynamic> _testProfile = {};
+Map<String, dynamic> _testSettings = {};
+Map<String, dynamic>? _uploadedPhotoRequest;
+
+void testAndroidWidgets(
+  String description,
+  Future<void> Function(WidgetTester tester) callback,
+) {
+  testWidgets(description, (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await callback(tester);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+}
 
 void main() {
-  testWidgets('shows sign-in form and validates required fields', (
+  setUp(() {
+    _testProfile = {
+      'id': 4,
+      'first_name': 'Alex',
+      'surname': 'Student',
+      'email': 'alex@example.com',
+      'role': 'student',
+      'student_number': 'S12345',
+      'phone_number': '+27123456789',
+    };
+    _testSettings = {'dark_mode': false, 'notifications_enabled': true};
+    _uploadedPhotoRequest = null;
+    _testProducts = [
+      {
+        'id': 1,
+        'title': 'Handmade beaded bracelets',
+        'description': 'Custom colours available.',
+        'seller': 'Lerato M.',
+        'price': null,
+        'is_mine': false,
+        'can_edit': false,
+        'can_delete': false,
+      },
+    ];
+    _testServices = [
+      {
+        'id': 2,
+        'title': 'Maths tutoring',
+        'description': 'First-year help.',
+        'seller': 'Jason K.',
+        'price': null,
+        'is_mine': false,
+        'can_edit': false,
+        'can_delete': false,
+      },
+    ];
+    _testIdeas = [
+      {
+        'id': 1,
+        'title': 'Refill station map',
+        'author': 'Mia R.',
+        'description': 'Water refill spots around campus.',
+        'can_delete': false,
+      },
+    ];
+    _testCommunities = [
+      {
+        'id': 1,
+        'name': 'Entrepreneurship Club',
+        'description': 'Meet founders and share ideas.',
+        'member_count': 248,
+        'is_joined': true,
+        'updates': [
+          {
+            'message':
+                'Pitch practice is happening Thursday at 16:00 in the hub.',
+          },
+        ],
+      },
+      {
+        'id': 2,
+        'name': 'Creative Arts Collective',
+        'description': 'A home for makers and storytellers.',
+        'member_count': 176,
+        'is_joined': false,
+        'updates': [],
+      },
+      {
+        'id': 3,
+        'name': 'Coding & Tech Society',
+        'description': 'Build projects together.',
+        'member_count': 312,
+        'is_joined': false,
+        'updates': [],
+      },
+    ];
+    _testBursaries = [
+      {
+        'id': 1,
+        'company_name': 'Eduvos',
+        'name': 'Eduvos Future Leaders Bursary',
+        'details': 'Funding for eligible students.',
+        'application_url': 'https://example.com/apply',
+      },
+    ];
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_featureChannel, (call) async {
+          final operation = call.method;
+          final arguments = Map<String, dynamic>.from(call.arguments as Map);
+          final data = Map<String, dynamic>.from(arguments['data'] as Map);
+          Map<String, dynamic> response;
+
+          if (operation == 'marketplace.list') {
+            response = {
+              'success': true,
+              'data': {'products': _testProducts, 'services': _testServices},
+            };
+          } else if (operation == 'marketplace.createProduct' ||
+              operation == 'marketplace.createService') {
+            final listing = {
+              ...data,
+              'id': DateTime.now().microsecondsSinceEpoch,
+              'seller': 'Alex',
+              'is_mine': true,
+              'can_edit': true,
+              'can_delete': true,
+            };
+            listing['images'] = <Map<String, dynamic>>[];
+            (operation.endsWith('Product') ? _testProducts : _testServices)
+                .insert(0, listing);
+            response = {'success': true, 'id': listing['id']};
+          } else if (operation == 'marketplace.update') {
+            final listings = data['type'] == 'product'
+                ? _testProducts
+                : _testServices;
+            final listing = listings.firstWhere(
+              (item) => item['id'] == data['id'],
+            );
+            listing.addAll({
+              'title': data['title'],
+              'description': data['description'],
+              'price': data['price'],
+            });
+            response = {'success': true};
+          } else if (operation == 'marketplace.delete') {
+            final listings = data['type'] == 'product'
+                ? _testProducts
+                : _testServices;
+            listings.removeWhere((listing) => listing['id'] == data['id']);
+            response = {'success': true};
+          } else if (operation == 'marketplace.uploadImages') {
+            _uploadedPhotoRequest = {'token': arguments['token'], ...data};
+            response = {'success': true};
+          } else if (operation == 'community.list') {
+            response = {'success': true, 'data': _testCommunities};
+          } else if (operation == 'community.join' ||
+              operation == 'community.leave') {
+            final community = _testCommunities.firstWhere(
+              (item) => item['id'] == data['community_id'],
+            );
+            final joined = operation == 'community.join';
+            community['is_joined'] = joined;
+            community['member_count'] =
+                (community['member_count'] as int) + (joined ? 1 : -1);
+            community['updates'] = joined
+                ? [
+                    {'message': 'Open mic sign-ups are open for next week.'},
+                  ]
+                : [];
+            response = {'success': true};
+          } else if (operation == 'tank.list') {
+            response = {'success': true, 'data': _testIdeas};
+          } else if (operation == 'tank.create') {
+            _testIdeas.insert(0, {
+              ...data,
+              'id': DateTime.now().microsecondsSinceEpoch,
+              'author': 'Alex',
+              'can_delete': true,
+            });
+            response = {'success': true};
+          } else if (operation == 'tank.delete') {
+            _testIdeas.removeWhere((idea) => idea['id'] == data['id']);
+            response = {'success': true};
+          } else if (operation == 'bursaries.list') {
+            response = {'success': true, 'data': _testBursaries};
+          } else if (operation == 'bursaries.create') {
+            _testBursaries.insert(0, {
+              ...data,
+              'id': DateTime.now().microsecondsSinceEpoch,
+            });
+            response = {'success': true};
+          } else {
+            throw MissingPluginException('No test handler for $operation');
+          }
+
+          return {'statusCode': 200, 'body': jsonEncode(response)};
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('eduvos/auth_api'), (
+          call,
+        ) async {
+          final arguments = Map<String, dynamic>.from(call.arguments as Map);
+          final uri = Uri.parse(arguments['url'] as String);
+          final method = arguments['method'] as String;
+          if (uri.path.endsWith('/profile.php') && method == 'GET') {
+            return {
+              'statusCode': 200,
+              'body': jsonEncode({
+                'success': true,
+                'data': {'profile': _testProfile, 'settings': _testSettings},
+              }),
+            };
+          }
+          if (uri.path.endsWith('/profile.php') && method == 'POST') {
+            final body =
+                jsonDecode(arguments['body'] as String) as Map<String, dynamic>;
+            switch (body['action']) {
+              case 'update_profile':
+                body.remove('action');
+                _testProfile = {..._testProfile, ...body};
+                return {
+                  'statusCode': 200,
+                  'body': jsonEncode({
+                    'success': true,
+                    'profile': _testProfile,
+                  }),
+                };
+              case 'update_settings':
+                _testSettings = {
+                  'dark_mode': body['dark_mode'],
+                  'notifications_enabled': body['notifications_enabled'],
+                };
+                return {
+                  'statusCode': 200,
+                  'body': jsonEncode({
+                    'success': true,
+                    'settings': _testSettings,
+                  }),
+                };
+              case 'logout':
+                return {'statusCode': 200, 'body': '{"success":true}'};
+            }
+          }
+          throw MissingPluginException('No test handler for ${uri.path}');
+        });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_featureChannel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('eduvos/auth_api'), null);
+  });
+
+  test('Android sign-in calls the native PHP API bridge', () async {
+    const channel = MethodChannel('eduvos/auth_api');
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'request');
+          final arguments = Map<String, dynamic>.from(call.arguments as Map);
+          expect(arguments['method'], 'POST');
+          expect(arguments['url'], contains('action=login'));
+          expect(
+            arguments['headers']['Content-Type'],
+            contains('application/json'),
+          );
+          expect(arguments['body'], contains('"role":"student"'));
+          return {
+            'statusCode': 200,
+            'body': '{"success":true,"data":{"token":"session-token","profile":{"role":"student","email":"alex@example.com"}}}',
+          };
+        });
+
+    try {
+      final result = await AuthApi.signIn(
+        role: 'student',
+        email: 'alex@example.com',
+        password: 'not-a-real-password',
+      );
+
+      expect(result.token, 'session-token');
+      expect(result.profile['role'], 'student');
+    } finally {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    }
+  });
+
+  testAndroidWidgets('uploads product photos through the Java feature bridge', (
+    WidgetTester tester,
+  ) async {
+    await FeatureApi.uploadProductImages(
+      token: 'photo-session-token',
+      productId: 42,
+      images: [XFile('C:\\temp\\product-photo.jpg')],
+    );
+
+    expect(_uploadedPhotoRequest?['token'], 'photo-session-token');
+    expect(_uploadedPhotoRequest?['product_id'], 42);
+    expect(_uploadedPhotoRequest?['files'], ['C:\\temp\\product-photo.jpg']);
+  });
+
+  testAndroidWidgets('shows sign-in form and validates required fields', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const EduvosApp());
 
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Sign in'), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('login-role-field')), findsOneWidget);
+    expect(find.text('Forgot password?'), findsNothing);
 
     await tester.ensureVisible(find.byKey(const ValueKey('password-field')));
     await tester.tap(find.text('Sign in').last);
@@ -19,7 +344,7 @@ void main() {
     expect(find.text('Enter your password'), findsOneWidget);
   });
 
-  testWidgets('switches to sign-up form and validates its fields', (
+  testAndroidWidgets('switches to sign-up form and validates its fields', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const EduvosApp());
@@ -27,7 +352,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Create your account'), findsOneWidget);
-    expect(find.byKey(const ValueKey('full-name-field')), findsOneWidget);
+    expect(
+      find.textContaining('Students need a student number'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('role-field')), findsOneWidget);
+    expect(find.byKey(const ValueKey('first-name-field')), findsOneWidget);
+    expect(find.byKey(const ValueKey('surname-field')), findsOneWidget);
+    expect(find.byKey(const ValueKey('phone-field')), findsOneWidget);
+    expect(find.byKey(const ValueKey('student-number-field')), findsOneWidget);
+    expect(find.byKey(const ValueKey('admin-signup-code-field')), findsNothing);
     expect(
       find.byKey(const ValueKey('confirm-password-field')),
       findsOneWidget,
@@ -38,9 +372,330 @@ void main() {
     await tester.tap(find.text('Create account').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Enter your full name'), findsOneWidget);
+    expect(find.text('Enter your first name'), findsOneWidget);
+    expect(find.text('Enter your surname'), findsOneWidget);
+    expect(find.text('Enter your phone number'), findsOneWidget);
+    expect(find.text('Enter your student number'), findsOneWidget);
     expect(find.text('Enter your email address'), findsOneWidget);
     expect(find.text('Enter your password'), findsOneWidget);
     expect(find.text('Confirm your password'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('role-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('role-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lecturer').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('student-number-field')), findsNothing);
+    expect(find.byKey(const ValueKey('lecturer-number-field')), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('role-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('role-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('Admin'), findsNothing);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Sign in').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sign in').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('login-role-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('login-role-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('Admin'), findsOneWidget);
+  });
+
+  testAndroidWidgets('home page shows the authenticated profile', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomePage(
+          profile: const {
+            'first_name': 'Alex',
+            'surname': 'Student',
+            'email': 'alex@example.com',
+            'role': 'student',
+            'student_number': 'S12345',
+          },
+          token: 'test-token',
+          onSignOut: () {},
+          onDarkModeChanged: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.text('Hello, Alex Student!'), findsOneWidget);
+    expect(find.byKey(const ValueKey('marketplace-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tank-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('communities-button')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Open your learning management system.'),
+      300,
+    );
+    expect(find.byKey(const ValueKey('mylms-button')), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Visit the Vossie website.'), 300);
+    expect(find.byKey(const ValueKey('vossie-button')), findsOneWidget);
+  });
+
+  testAndroidWidgets('profile edits details and persists settings', (
+    WidgetTester tester,
+  ) async {
+    Map<String, dynamic>? updatedProfile;
+    bool? updatedDarkMode;
+    var didSignOut = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileSettingsPage(
+          profile: _testProfile,
+          token: 'test-token',
+          onSignOut: () => didSignOut = true,
+          onProfileUpdated: (profile) => updatedProfile = profile,
+          onDarkModeChanged: (enabled) => updatedDarkMode = enabled,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Profile & settings'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('profile-name-field')),
+      'Alexandra',
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('save-profile-button')),
+    );
+    await tester.tap(find.byKey(const ValueKey('save-profile-button')));
+    await tester.pumpAndSettle();
+    expect(updatedProfile?['first_name'], 'Alexandra');
+    expect(_testProfile['first_name'], 'Alexandra');
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('dark-mode-setting')));
+    await tester.tap(find.byKey(const ValueKey('dark-mode-setting')));
+    await tester.pumpAndSettle();
+    expect(updatedDarkMode, isTrue);
+    expect(_testSettings['dark_mode'], isTrue);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('notifications-setting')),
+    );
+    await tester.tap(find.byKey(const ValueKey('notifications-setting')));
+    await tester.pumpAndSettle();
+    expect(_testSettings['notifications_enabled'], isFalse);
+    expect(
+      find.byKey(const ValueKey('profile-signout-button')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('profile-signout-button')));
+    expect(didSignOut, isTrue);
+  });
+
+  testAndroidWidgets(
+    'home page navigates to Marketplace and can add a listing',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomePage(
+            profile: const {
+              'first_name': 'Alex',
+              'surname': 'Student',
+              'role': 'student',
+            },
+            token: 'test-token',
+            onSignOut: () {},
+            onDarkModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('marketplace-button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Marketplace'), findsOneWidget);
+      expect(find.text('Maths tutoring'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('create-listing-button')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('add-product-photos-button')),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Name'),
+        'Custom notebooks',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Description'),
+        'Handmade notebooks for students.',
+      );
+      await tester.tap(find.text('Post listing'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Custom notebooks'), findsOneWidget);
+      expect(find.textContaining('Posted by Alex'), findsOneWidget);
+      expect(find.byTooltip('Edit listing'), findsOneWidget);
+      await tester.tap(find.byTooltip('Edit listing'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit your listing'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Name'),
+        'Custom student notebooks',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Description'),
+        'Updated handmade notebooks for students.',
+      );
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Custom notebooks'), findsNothing);
+      expect(find.text('Custom student notebooks'), findsOneWidget);
+    },
+  );
+
+  testAndroidWidgets('home page opens the bursaries list', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomePage(
+          profile: const {
+            'first_name': 'Alex',
+            'surname': 'Student',
+            'role': 'student',
+          },
+          token: 'test-token',
+          onSignOut: () {},
+          onDarkModeChanged: (_) {},
+        ),
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.text('Find funding opportunities and application links.'),
+      300,
+    );
+    final bursariesButton = find.byKey(const ValueKey('bursaries-button'));
+    await tester.tap(bursariesButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Bursaries'), findsOneWidget);
+    expect(find.text('Eduvos Future Leaders Bursary'), findsOneWidget);
+    expect(find.byKey(const ValueKey('post-bursary-button')), findsNothing);
+  });
+
+  testAndroidWidgets('admins can post a bursary with an application link', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: BursariesPage(token: 'admin-token', canPost: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('post-bursary-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('bursary-company-name-field')),
+      'Community Builders Ltd',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('bursary-name-field')),
+      'Community Builders Fund',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('bursary-details-field')),
+      'Funding for community projects.',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('bursary-url-field')),
+      'https://example.com/community-fund',
+    );
+    await tester.tap(find.text('Post bursary'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Community Builders Fund'), findsOneWidget);
+    expect(find.text('Community Builders Ltd'), findsOneWidget);
+    expect(find.text('Funding for community projects.'), findsOneWidget);
+  });
+
+  testAndroidWidgets('The Tank lets students post a business idea', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: TankPage(token: 'test-token')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Refill station map'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('share-idea-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Idea name'),
+      'Campus delivery',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Tell the community about it'),
+      'Deliver supplies between classes.',
+    );
+    await tester.tap(find.text('Post idea'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Campus delivery'), findsOneWidget);
+    expect(find.textContaining('Shared by Alex'), findsOneWidget);
+  });
+
+  testAndroidWidgets('students can join a community and see its updates', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: CommunitiesPage(token: 'test-token')),
+    );
+    await tester.pumpAndSettle();
+
+    final joinButton = find.byKey(
+      const ValueKey('join-Creative Arts Collective'),
+    );
+    await tester.ensureVisible(joinButton);
+    await tester.tap(joinButton);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(of: joinButton, matching: find.text('Leave')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Open mic sign-ups are open for next week.'),
+      findsOneWidget,
+    );
+  });
+
+  testAndroidWidgets('admin dashboard shows the authenticated admin profile', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AdminDashboardPage(
+          profile: const {
+            'first_name': 'Alex Admin',
+            'email': 'admin@example.com',
+            'role': 'admin',
+          },
+          token: 'admin-token',
+          onSignOut: () {},
+          onDarkModeChanged: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.text('Admin Dashboard'), findsOneWidget);
+    expect(find.text('Welcome, Alex Admin'), findsOneWidget);
+    expect(find.text('admin@example.com'), findsOneWidget);
+    expect(find.text('Administrator account'), findsOneWidget);
   });
 }
