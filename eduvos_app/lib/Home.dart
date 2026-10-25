@@ -7,6 +7,8 @@ import 'marketplace.dart';
 import 'ProfileSettings.dart';
 import 'tank.dart';
 import 'bursaries.dart';
+import 'blog.dart';
+import 'chats.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -28,15 +30,103 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late Map<String, dynamic> _profile;
+  late final List<Widget?> _tabs;
+  int _selectedTab = 0;
 
   @override
   void initState() {
     super.initState();
     _profile = Map<String, dynamic>.from(widget.profile);
+    _tabs = List<Widget?>.filled(4, null);
+  }
+
+  Widget _buildTab(int index) {
+    switch (index) {
+      case 0:
+        return _homeTab();
+      case 1:
+        return ProfileSettingsPage(
+          profile: _profile,
+          token: widget.token,
+          onSignOut: widget.onSignOut,
+          onDarkModeChanged: widget.onDarkModeChanged,
+          onProfileUpdated: (profile) {
+            if (!mounted) return;
+            setState(() {
+              _profile = profile;
+              _tabs[0] = _buildTab(0);
+              _tabs[1] = null;
+              _tabs[1] = _buildTab(1);
+            });
+          },
+        );
+      case 2:
+        return ChatInboxPage(
+          token: widget.token,
+          role: _profile['role'] as String? ?? 'student',
+        );
+      case 3:
+        return BursariesPage(
+          token: widget.token,
+          canPost: _profile['role'] == 'admin',
+        );
+      default:
+        throw RangeError.index(index, _tabs);
+    }
+  }
+
+  void _selectTab(int index) {
+    setState(() {
+      _selectedTab = index;
+      _tabs[index] ??= _buildTab(index);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    _tabs[0] ??= _buildTab(0);
+    return Scaffold(
+      body: IndexedStack(
+        index: _selectedTab,
+        children: [
+          for (final tab in _tabs) tab ?? const SizedBox.shrink(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        key: const ValueKey('home-bottom-navigation'),
+        selectedIndex: _selectedTab,
+        onDestinationSelected: _selectTab,
+        destinations: const [
+          NavigationDestination(
+            key: ValueKey('bottom-nav-home'),
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            key: ValueKey('bottom-nav-profile'),
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
+          ),
+          NavigationDestination(
+            key: ValueKey('bottom-nav-chats'),
+            icon: Icon(Icons.chat_bubble_outline_rounded),
+            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            label: 'Chats',
+          ),
+          NavigationDestination(
+            key: ValueKey('bottom-nav-bursaries'),
+            icon: Icon(Icons.school_outlined),
+            selectedIcon: Icon(Icons.school_rounded),
+            label: 'Bursaries',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _homeTab() {
     final firstName = _profile['first_name'] as String? ?? '';
     final surname = _profile['surname'] as String? ?? '';
     final fullName = '$firstName $surname'.trim();
@@ -49,7 +139,7 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             key: const ValueKey('profile-settings-button'),
             tooltip: 'Profile & settings',
-            onPressed: _openProfile,
+            onPressed: () => _selectTab(1),
             icon: const Icon(Icons.account_circle_outlined),
           ),
           TextButton.icon(
@@ -64,6 +154,7 @@ class _HomePageState extends State<HomePage> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: ListView(
+              key: const ValueKey('home-dashboard-list'),
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
               children: [
                 _GreetingCard(name: greetingName),
@@ -85,7 +176,7 @@ class _HomePageState extends State<HomePage> {
                   title: 'Marketplace',
                   subtitle: 'Buy and sell products or promote your services.',
                   icon: Icons.storefront_rounded,
-                  color: const Color(0xFF087E8B),
+                  color: const Color(0xFF2563EB),
                   onTap: () => _openPage(
                     context,
                     MarketplacePage(profile: _profile, token: widget.token),
@@ -97,12 +188,13 @@ class _HomePageState extends State<HomePage> {
                   title: 'The Tank',
                   subtitle: 'Share your business ideas and get inspired.',
                   icon: Icons.lightbulb_outline_rounded,
-                  color: const Color(0xFF8C5A18),
+                  color: const Color(0xFF4F46E5),
                   onTap: () => _openPage(
                     context,
                     TankPage(
                       token: widget.token,
                       canPost: _profile['role'] == 'student',
+                      canChat: _profile['role'] == 'investor',
                     ),
                   ),
                 ),
@@ -112,7 +204,7 @@ class _HomePageState extends State<HomePage> {
                   title: 'Communities',
                   subtitle: 'Join Eduvos communities and follow their updates.',
                   icon: Icons.groups_rounded,
-                  color: const Color(0xFF6252A3),
+                  color: const Color(0xFF0284C7),
                   onTap: () =>
                       _openPage(context, CommunitiesPage(token: widget.token)),
                 ),
@@ -122,55 +214,51 @@ class _HomePageState extends State<HomePage> {
                   title: 'Bursaries',
                   subtitle: 'Find funding opportunities and application links.',
                   icon: Icons.school_outlined,
-                  color: const Color(0xFF3B6E4D),
+                  color: const Color(0xFF3B82F6),
+                  onTap: () => _selectTab(3),
+                ),
+                if (_profile['role'] != 'investor') ...[
+                  const SizedBox(height: 12),
+                  _FeatureButton(
+                    key: const ValueKey('mylms-button'),
+                    title: 'MyLMS',
+                    subtitle: 'Open your learning management system.',
+                    icon: Icons.school_rounded,
+                    color: const Color(0xFF1D4ED8),
+                    onTap: () => _openExternalWebsite(
+                      Uri.https('www.mylms.vossie.net', ''),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _FeatureButton(
+                    key: const ValueKey('vossie-button'),
+                    title: 'Vossie',
+                    subtitle: 'Visit the Vossie website.',
+                    icon: Icons.language_rounded,
+                    color: const Color(0xFF60A5FA),
+                    onTap: () =>
+                        _openExternalWebsite(Uri.https('www.vossie.net', '')),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _FeatureButton(
+                  key: const ValueKey('entrepreneurial-blog-button'),
+                  title: 'Entrepreneurial Advice',
+                  subtitle: 'Read advice, ask questions, and share experience.',
+                  icon: Icons.article_outlined,
+                  color: const Color(0xFF6366F1),
                   onTap: () => _openPage(
                     context,
-                    BursariesPage(
+                    BlogPage(
                       token: widget.token,
-                      canPost: _profile['role'] == 'admin',
+                      role: _profile['role'] as String? ?? 'student',
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                _FeatureButton(
-                  key: const ValueKey('mylms-button'),
-                  title: 'MyLMS',
-                  subtitle: 'Open your learning management system.',
-                  icon: Icons.school_rounded,
-                  color: const Color(0xFF3156A3),
-                  onTap: () => _openExternalWebsite(
-                    Uri.https('www.mylms.vossie.net', ''),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _FeatureButton(
-                  key: const ValueKey('vossie-button'),
-                  title: 'Vossie',
-                  subtitle: 'Visit the Vossie website.',
-                  icon: Icons.language_rounded,
-                  color: const Color(0xFF75429A),
-                  onTap: () =>
-                      _openExternalWebsite(Uri.https('www.vossie.net', '')),
-                ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  void _openProfile() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ProfileSettingsPage(
-          profile: _profile,
-          token: widget.token,
-          onSignOut: widget.onSignOut,
-          onDarkModeChanged: widget.onDarkModeChanged,
-          onProfileUpdated: (profile) {
-            if (mounted) setState(() => _profile = profile);
-          },
         ),
       ),
     );
@@ -207,37 +295,46 @@ class _GreetingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       clipBehavior: Clip.antiAlias,
-      color: const Color(0xFF087E8B),
-      child: Padding(
-        padding: const EdgeInsets.all(22),
-        child: Row(
-          children: [
-            const CircleAvatar(
-              radius: 27,
-              backgroundColor: Colors.white24,
-              child: Icon(Icons.waving_hand_rounded, color: Colors.white),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Hello, $name!',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  const Text(
-                    'Good things happen when we connect.',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ],
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF2563EB), Color(0xFF4F46E5)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Row(
+            children: [
+              const CircleAvatar(
+                radius: 27,
+                backgroundColor: Colors.white24,
+                child: Icon(Icons.waving_hand_rounded, color: Colors.white),
               ),
-            ),
-          ],
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Hello, $name!',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Good things happen when we connect.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

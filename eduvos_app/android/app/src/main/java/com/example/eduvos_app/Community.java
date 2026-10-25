@@ -21,11 +21,17 @@ final class Community {
         String method = "GET";
         JSONObject body = null;
 
-        if ("join".equals(operation) || "leave".equals(operation)) {
+        if ("join".equals(operation) || "leave".equals(operation)
+                || "create".equals(operation)) {
             method = "POST";
             body = new JSONObject();
             body.put("action", operation);
-            copyValue(data, body, "community_id");
+            if ("create".equals(operation)) {
+                copyValue(data, body, "name");
+                copyValue(data, body, "description");
+            } else {
+                copyValue(data, body, "community_id");
+            }
         } else if (!"list".equals(operation)) {
             throw new IllegalArgumentException("Unknown community operation.");
         }

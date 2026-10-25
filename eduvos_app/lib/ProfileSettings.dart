@@ -30,6 +30,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
   late final TextEditingController _emailController;
   late final TextEditingController _phoneController;
   late final TextEditingController _institutionNumberController;
+  late final TextEditingController _companyNameController;
 
   bool _darkMode = false;
   bool _notificationsEnabled = true;
@@ -40,6 +41,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
 
   String get _role => widget.profile['role'] as String? ?? 'student';
   bool get _isAdmin => _role == 'admin';
+  bool get _isInvestor => _role == 'investor';
 
   @override
   void initState() {
@@ -64,6 +66,9 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
               as String? ??
           '',
     );
+    _companyNameController = TextEditingController(
+      text: widget.profile['company_name'] as String? ?? '',
+    );
     _loadSettings();
   }
 
@@ -74,6 +79,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
     _emailController.dispose();
     _phoneController.dispose();
     _institutionNumberController.dispose();
+    _companyNameController.dispose();
     super.dispose();
   }
 
@@ -113,6 +119,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
       profile.addAll({
         'surname': _surnameController.text.trim(),
         'phone_number': _phoneController.text.trim(),
+        if (_isInvestor) 'company_name': _companyNameController.text.trim(),
         if (_role == 'student')
           'student_number': _institutionNumberController.text.trim(),
         if (_role == 'lecturer')
@@ -287,25 +294,42 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                           validator: (value) =>
                               _required(value, 'phone number'),
                         ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          key: const ValueKey(
-                            'profile-institution-number-field',
+                        if (_isInvestor) ...[
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            key: const ValueKey('profile-company-name-field'),
+                            controller: _companyNameController,
+                            maxLength: 200,
+                            decoration: const InputDecoration(
+                              labelText: 'Company name (optional)',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) =>
+                                (value?.trim().length ?? 0) > 200
+                                ? 'Company name must be 200 characters or fewer'
+                                : null,
                           ),
-                          controller: _institutionNumberController,
-                          decoration: InputDecoration(
-                            labelText: _role == 'lecturer'
-                                ? 'Lecturer number'
-                                : 'Student number',
-                            border: const OutlineInputBorder(),
+                        ] else ...[
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            key: const ValueKey(
+                              'profile-institution-number-field',
+                            ),
+                            controller: _institutionNumberController,
+                            decoration: InputDecoration(
+                              labelText: _role == 'lecturer'
+                                  ? 'Lecturer number'
+                                  : 'Student number',
+                              border: const OutlineInputBorder(),
+                            ),
+                            validator: (value) => _required(
+                              value,
+                              _role == 'lecturer'
+                                  ? 'lecturer number'
+                                  : 'student number',
+                            ),
                           ),
-                          validator: (value) => _required(
-                            value,
-                            _role == 'lecturer'
-                                ? 'lecturer number'
-                                : 'student number',
-                          ),
-                        ),
+                        ],
                       ],
                       const SizedBox(height: 16),
                       SizedBox(

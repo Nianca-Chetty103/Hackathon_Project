@@ -81,6 +81,33 @@ class FeatureApi {
     required int productId,
     required List<XFile> images,
   }) async {
+    await _uploadListingImages(
+      token: token,
+      type: 'product',
+      listingId: productId,
+      images: images,
+    );
+  }
+
+  static Future<void> uploadServicePriceList({
+    required String token,
+    required int serviceId,
+    required XFile image,
+  }) async {
+    await _uploadListingImages(
+      token: token,
+      type: 'service',
+      listingId: serviceId,
+      images: [image],
+    );
+  }
+
+  static Future<void> _uploadListingImages({
+    required String token,
+    required String type,
+    required int listingId,
+    required List<XFile> images,
+  }) async {
     if (images.isEmpty) return;
     final endpoint = _endpoint('marketplace');
     late final int statusCode;
@@ -94,7 +121,9 @@ class FeatureApi {
             'endpoint': endpoint.toString(),
             'token': token,
             'data': {
-              'product_id': productId,
+              'type': type,
+              'listing_id': listingId,
+              if (type == 'product') 'product_id': listingId,
               'files': images.map((image) => image.path).toList(),
             },
           },
@@ -110,11 +139,11 @@ class FeatureApi {
         responseBody = response['body'] as String;
       } on PlatformException catch (error) {
         throw FeatureApiException(
-          error.message ?? 'The product photos could not be uploaded.',
+          error.message ?? 'The listing images could not be uploaded.',
         );
       } on MissingPluginException {
         throw const FeatureApiException(
-          'The Android photo upload is unavailable. Rebuild and reinstall the app.',
+          'The Android listing image upload is unavailable. Rebuild and reinstall the app.',
         );
       }
     } else {
@@ -122,7 +151,11 @@ class FeatureApi {
         final request = http.MultipartRequest('POST', endpoint)
           ..headers['Authorization'] = 'Bearer $token'
           ..fields['action'] = 'upload_images'
-          ..fields['product_id'] = '$productId';
+          ..fields['type'] = type
+          ..fields['listing_id'] = '$listingId';
+        if (type == 'product') {
+          request.fields['product_id'] = '$listingId';
+        }
         for (final image in images) {
           final bytes = await image.readAsBytes();
           request.files.add(
@@ -158,18 +191,21 @@ class FeatureApi {
       throw FeatureApiException(
         message is String
             ? message
-            : 'The product photos could not be uploaded.',
+            : 'The listing images could not be uploaded.',
       );
     }
   }
 
-  static Uri productImageUrl(int imageId) {
+  static Uri listingImageUrl(int imageId, {String type = 'product'}) {
     final endpoint = _endpoint('marketplace');
     return endpoint.replace(
       path: endpoint.path.replaceFirst(RegExp(r'[^/]+$'), 'product_image.php'),
-      queryParameters: {'id': '$imageId'},
+      queryParameters: {'id': '$imageId', 'type': type},
     );
   }
+
+  static Uri productImageUrl(int imageId) =>
+      listingImageUrl(imageId, type: 'product');
 
   static Future<List<dynamic>> communities(String token) async {
     final response = await _request('community', 'list', token);
@@ -192,6 +228,24 @@ class FeatureApi {
     });
   }
 
+  static Future<int> createCommunity({
+    required String token,
+    required String name,
+    required String description,
+  }) async {
+    final response = await _request('community', 'create', token, {
+      'name': name,
+      'description': description,
+    });
+    final communityId = response['community_id'];
+    if (communityId is! int || communityId < 1) {
+      throw const FeatureApiException(
+        'The server did not return the community ID.',
+      );
+    }
+    return communityId;
+  }
+
   static Future<List<dynamic>> ideas(String token) async {
     final response = await _request('tank', 'list', token);
     final data = response['data'];
@@ -205,10 +259,14 @@ class FeatureApi {
     required String token,
     required String title,
     required String description,
+    required String industry,
+    required String deadline,
   }) async {
     await _request('tank', 'create', token, {
       'title': title,
       'description': description,
+      'industry': industry,
+      'deadline': deadline,
     });
   }
 
@@ -217,6 +275,46 @@ class FeatureApi {
     required int id,
   }) async {
     await _request('tank', 'delete', token, {'id': id});
+  }
+
+  static Future<Map<String, dynamic>> expressIdeaInterest({
+    required String token,
+    required int ideaId,
+  }) async {
+    final response = await _request('tank', 'interested', token, {
+      'idea_id': ideaId,
+    });
+    if (response['chat_id'] is! int || response['interest_id'] is! int) {
+      throw const FeatureApiException(
+        'The server did not return the idea chat and interest.',
+      );
+    }
+    return response;
+  }
+
+  static Future<Map<String, dynamic>> ideaFeeCheckout({
+    required String token,
+    required int interestId,
+  }) async {
+    return _request('tank', 'fee_checkout', token, {'interest_id': interestId});
+  }
+
+  static Future<List<dynamic>> ideaFeePayments(String token) async {
+    final response = await _request('tank', 'fee_list', token);
+    final data = response['data'];
+    if (data is! List) {
+      throw const FeatureApiException(
+        'The server returned invalid idea fee payments.',
+      );
+    }
+    return data;
+  }
+
+  static Future<void> verifyIdeaFeePayment({
+    required String token,
+    required int paymentId,
+  }) async {
+    await _request('tank', 'fee_verify', token, {'payment_id': paymentId});
   }
 
   static Future<List<dynamic>> bursaries(String token) async {
@@ -240,6 +338,120 @@ class FeatureApi {
       'name': name,
       'details': details,
       'application_url': applicationUrl,
+    });
+  }
+
+  static Future<List<dynamic>> blogPosts(String token) async {
+    final response = await _request('blog', 'list', token);
+    final data = response['data'];
+    if (data is! List) {
+      throw const FeatureApiException(
+        'The server returned invalid advice posts.',
+      );
+    }
+    return data;
+  }
+
+  static Future<void> createBlogPost({
+    required String token,
+    required String title,
+    required String body,
+  }) async {
+    await _request('blog', 'create', token, {'title': title, 'body': body});
+  }
+
+  static Future<void> commentOnBlogPost({
+    required String token,
+    required int postId,
+    required String body,
+  }) async {
+    await _request('blog', 'comment', token, {'post_id': postId, 'body': body});
+  }
+
+  static Future<bool> toggleBlogReaction({
+    required String token,
+    required int postId,
+  }) async {
+    final response = await _request('blog', 'react', token, {
+      'post_id': postId,
+    });
+    if (response['liked'] is! bool) {
+      throw const FeatureApiException(
+        'The server returned an invalid reaction.',
+      );
+    }
+    return response['liked'] as bool;
+  }
+
+  static Future<List<dynamic>> chats(String token) async {
+    final response = await _request('chats', 'list', token);
+    final data = response['data'];
+    if (data is! List) {
+      throw const FeatureApiException('The server returned invalid chats.');
+    }
+    return data;
+  }
+
+  static Future<int> openChat({
+    required String token,
+    required int ideaId,
+  }) async {
+    final response = await _request('chats', 'open', token, {
+      'idea_id': ideaId,
+    });
+    final chatId = response['chat_id'];
+    if (chatId is! int || chatId < 1) {
+      throw const FeatureApiException('The server did not return the chat ID.');
+    }
+    return chatId;
+  }
+
+  static Future<int> openMarketplaceChat({
+    required String token,
+    required String listingType,
+    required int listingId,
+  }) async {
+    final response = await _request('chats', 'open_marketplace', token, {
+      'listing_type': listingType,
+      'listing_id': listingId,
+    });
+    final chatId = response['chat_id'];
+    if (chatId is! int || chatId < 1) {
+      throw const FeatureApiException(
+        'The server did not return the marketplace chat ID.',
+      );
+    }
+    return chatId;
+  }
+
+  static Future<List<dynamic>> chatMessages({
+    required String token,
+    required int chatId,
+    String chatType = 'idea',
+  }) async {
+    final response = await _request('chats', 'messages', token, {
+      'chat_id': chatId,
+      'chat_type': chatType,
+    });
+    final data = response['data'];
+    if (data is! List) {
+      throw const FeatureApiException(
+        'The server returned invalid chat messages.',
+      );
+    }
+    return data;
+  }
+
+  static Future<void> sendChatMessage({
+    required String token,
+    required int chatId,
+    required String body,
+    String chatType = 'idea',
+  }) async {
+    await _request('chats', 'send', token, {
+      'chat_id': chatId,
+      'body': body,
+      'chat_type': chatType,
     });
   }
 
@@ -335,6 +547,8 @@ class FeatureApi {
       'community' => 'communities.php',
       'tank' => 'ideas.php',
       'bursaries' => 'bursaries.php',
+      'blog' => 'blog.php',
+      'chats' => 'chats.php',
       _ => throw ArgumentError.value(feature, 'feature'),
     };
     return authUri.replace(

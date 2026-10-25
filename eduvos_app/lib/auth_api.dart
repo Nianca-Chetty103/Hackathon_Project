@@ -36,6 +36,7 @@ class AuthApi {
     required String phoneNumber,
     String? studentNumber,
     String? lecturerNumber,
+    String? companyName,
   }) async {
     final payload = <String, String>{
       'role': role,
@@ -47,6 +48,7 @@ class AuthApi {
     };
     if (studentNumber != null) payload['student_number'] = studentNumber;
     if (lecturerNumber != null) payload['lecturer_number'] = lecturerNumber;
+    if (companyName != null) payload['company_name'] = companyName;
     return _authenticate('signup', payload);
   }
 

@@ -28,15 +28,18 @@ final class Marketplace {
             Map<?, ?> data
     ) throws IOException, JSONException {
         if ("uploadImages".equals(operation)) {
-            Object productId = data.get("product_id");
+            Object listingId = data.get("listing_id");
+            if (!(listingId instanceof Number)) listingId = data.get("product_id");
             Object filePaths = data.get("files");
-            if (!(productId instanceof Number) || !(filePaths instanceof List)) {
-                throw new IllegalArgumentException("A product ID and image files are required.");
+            Object listingType = data.get("type");
+            if (!(listingId instanceof Number) || !(filePaths instanceof List)) {
+                throw new IllegalArgumentException("A listing ID and image files are required.");
             }
             return uploadImages(
                     endpoint,
                     token,
-                    ((Number) productId).intValue(),
+                    listingType instanceof String ? (String) listingType : "product",
+                    ((Number) listingId).intValue(),
                     (List<?>) filePaths
             );
         }
@@ -79,7 +82,8 @@ final class Marketplace {
     private static Map<String, Object> uploadImages(
             String endpoint,
             String token,
-            int productId,
+            String listingType,
+            int listingId,
             List<?> paths
     ) throws IOException {
         String boundary = "Eduvos" + UUID.randomUUID().toString().replace("-", "");
@@ -97,7 +101,11 @@ final class Marketplace {
             try (OutputStream rawOutput = connection.getOutputStream();
                  BufferedOutputStream output = new BufferedOutputStream(rawOutput)) {
                 writeField(output, boundary, "action", "upload_images");
-                writeField(output, boundary, "product_id", String.valueOf(productId));
+                writeField(output, boundary, "type", listingType);
+                writeField(output, boundary, "listing_id", String.valueOf(listingId));
+                if ("product".equals(listingType)) {
+                    writeField(output, boundary, "product_id", String.valueOf(listingId));
+                }
                 for (int index = 0; index < paths.size(); index++) {
                     Object pathValue = paths.get(index);
                     if (!(pathValue instanceof String)) {

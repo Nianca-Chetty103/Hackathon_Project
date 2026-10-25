@@ -45,6 +45,7 @@ function role_tables(): array
         'student' => 'students',
         'lecturer' => 'lecturers',
         'admin' => 'admins',
+        'investor' => 'investors',
     ];
 }
 
@@ -57,9 +58,13 @@ function public_profile(PDO $connection, string $role, int $accountId): ?array
         'lecturer' => 'SELECT id, first_name, surname, email,
                               NULL AS student_number, lecturer_number, phone_number
                        FROM lecturers WHERE id = :id',
+        'investor' => 'SELECT id, first_name, surname, email,
+                              NULL AS student_number, NULL AS lecturer_number,
+                              phone_number, company_name
+                       FROM investors WHERE id = :id',
         'admin' => 'SELECT id, name AS first_name, \'\' AS surname, email,
                            NULL AS student_number, NULL AS lecturer_number,
-                           NULL AS phone_number
+                           NULL AS phone_number, NULL AS company_name
                     FROM admins WHERE id = :id',
     ];
     if (!isset($queries[$role])) {
@@ -148,8 +153,8 @@ try {
 
     if ($action === 'signup') {
         $role = $data['role'] ?? null;
-        if (!is_string($role) || !in_array($role, ['student', 'lecturer'], true)) {
-            respond(422, ['success' => false, 'message' => 'Choose student or lecturer to create an account.']);
+        if (!is_string($role) || !in_array($role, ['student', 'lecturer', 'investor'], true)) {
+            respond(422, ['success' => false, 'message' => 'Choose student, lecturer, or investor to create an account.']);
         }
 
         $firstName = required_string($data, 'first_name', 100);
@@ -174,7 +179,7 @@ try {
         if ($role === 'student') {
             $numberColumn = 'student_number';
             $institutionNumber = required_string($data, $numberColumn, 100);
-        } else {
+        } elseif ($role === 'lecturer') {
             $numberColumn = 'lecturer_number';
             $institutionNumber = required_string($data, $numberColumn, 100);
         }
@@ -184,6 +189,16 @@ try {
         if ($numberColumn !== null) {
             $columns .= ', ' . $numberColumn;
             $values .= ', :institution_number';
+        }
+        $companyName = null;
+        if ($role === 'investor') {
+            $providedCompanyName = $data['company_name'] ?? '';
+            if (!is_string($providedCompanyName) || strlen(trim($providedCompanyName)) > 200) {
+                respond(422, ['success' => false, 'message' => 'Company name must be 200 characters or fewer.']);
+            }
+            $companyName = trim($providedCompanyName);
+            $columns .= ', company_name';
+            $values .= ', :company_name';
         }
 
         $connection->beginTransaction();
@@ -199,6 +214,9 @@ try {
         ];
         if ($numberColumn !== null) {
             $parameters['institution_number'] = $institutionNumber;
+        }
+        if ($role === 'investor') {
+            $parameters['company_name'] = $companyName === '' ? null : $companyName;
         }
         $statement->execute($parameters);
 

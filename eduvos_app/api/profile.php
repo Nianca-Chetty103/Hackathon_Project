@@ -17,9 +17,13 @@ try {
         'lecturer' => 'SELECT id, first_name, surname, email,
                               NULL AS student_number, lecturer_number, phone_number
                        FROM lecturers WHERE id = :id',
+        'investor' => 'SELECT id, first_name, surname, email,
+                              NULL AS student_number, NULL AS lecturer_number,
+                              phone_number, company_name
+                       FROM investors WHERE id = :id',
         'admin' => 'SELECT id, name AS first_name, \'\' AS surname, email,
                            NULL AS student_number, NULL AS lecturer_number,
-                           NULL AS phone_number
+                           NULL AS phone_number, NULL AS company_name
                     FROM admins WHERE id = :id',
     ];
     $profileStatement = $connection->prepare($profileQueries[$role]);
@@ -123,7 +127,7 @@ try {
                      phone_number = :phone_number, student_number = :number
                  WHERE id = :id'
             );
-        } else {
+        } elseif ($role === 'lecturer') {
             $number = api_required_string($data, 'lecturer_number', 100);
             $statement = $connection->prepare(
                 'UPDATE lecturers
@@ -131,6 +135,30 @@ try {
                      phone_number = :phone_number, lecturer_number = :number
                  WHERE id = :id'
             );
+        } else {
+            $companyName = $data['company_name'] ?? '';
+            if (!is_string($companyName) || strlen(trim($companyName)) > 200) {
+                api_respond(422, ['success' => false, 'message' => 'Company name must be 200 characters or fewer.']);
+            }
+            $statement = $connection->prepare(
+                'UPDATE investors
+                 SET first_name = :first_name, surname = :surname, email = :email,
+                     phone_number = :phone_number, company_name = :company_name
+                 WHERE id = :id'
+            );
+            $statement->execute([
+                'first_name' => $firstName,
+                'surname' => $surname,
+                'email' => $email,
+                'phone_number' => $phoneNumber,
+                'company_name' => trim($companyName) === '' ? null : trim($companyName),
+                'id' => $accountId,
+            ]);
+            $profileStatement->execute(['id' => $accountId]);
+            $profile = $profileStatement->fetch(PDO::FETCH_ASSOC);
+            $profile['id'] = (int) $profile['id'];
+            $profile['role'] = $role;
+            api_respond(200, ['success' => true, 'profile' => $profile]);
         }
         $statement->execute([
             'first_name' => $firstName,

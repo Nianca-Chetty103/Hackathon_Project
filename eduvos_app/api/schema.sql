@@ -32,6 +32,19 @@ CREATE TABLE IF NOT EXISTS lecturers (
   UNIQUE KEY uq_lecturers_number (lecturer_number)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS investors (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  first_name VARCHAR(100) NOT NULL,
+  surname VARCHAR(100) NOT NULL,
+  email VARCHAR(254) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(25) NOT NULL,
+  company_name VARCHAR(200) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_investors_email (email)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS admins (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   name VARCHAR(201) NOT NULL,
@@ -44,7 +57,7 @@ CREATE TABLE IF NOT EXISTS admins (
 
 CREATE TABLE IF NOT EXISTS auth_tokens (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  account_role ENUM('student', 'lecturer', 'admin') NOT NULL,
+  account_role ENUM('student', 'lecturer', 'admin', 'investor') NOT NULL,
   account_id BIGINT UNSIGNED NOT NULL,
   token_hash CHAR(64) NOT NULL,
   expires_at DATETIME NOT NULL,
@@ -56,7 +69,7 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS account_settings (
-  account_role ENUM('student', 'lecturer', 'admin') NOT NULL,
+  account_role ENUM('student', 'lecturer', 'admin', 'investor') NOT NULL,
   account_id BIGINT UNSIGNED NOT NULL,
   dark_mode TINYINT(1) NOT NULL DEFAULT 0,
   notifications_enabled TINYINT(1) NOT NULL DEFAULT 1,
@@ -103,19 +116,47 @@ CREATE TABLE IF NOT EXISTS services (
   KEY idx_services_owner (owner_role, owner_id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS service_images (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  service_id BIGINT UNSIGNED NOT NULL,
+  image_path VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(50) NOT NULL,
+  file_size INT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_service_image_service (service_id),
+  CONSTRAINT fk_service_image_service
+    FOREIGN KEY (service_id) REFERENCES services (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS communities (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   name VARCHAR(120) NOT NULL,
   description VARCHAR(500) NOT NULL,
+  created_by_role ENUM('student', 'lecturer', 'admin', 'investor') NULL,
+  created_by_id BIGINT UNSIGNED NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_communities_name (name)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS community_chat_messages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  community_id BIGINT UNSIGNED NOT NULL,
+  sender_role ENUM('student', 'lecturer', 'admin', 'investor') NOT NULL,
+  sender_id BIGINT UNSIGNED NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_community_chat_messages_community (community_id, id),
+  CONSTRAINT fk_community_chat_message_community
+    FOREIGN KEY (community_id) REFERENCES communities (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS community_memberships (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   community_id BIGINT UNSIGNED NOT NULL,
-  account_role ENUM('student', 'lecturer', 'admin') NOT NULL,
+  account_role ENUM('student', 'lecturer', 'admin', 'investor') NOT NULL,
   account_id BIGINT UNSIGNED NOT NULL,
   joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -142,10 +183,42 @@ CREATE TABLE IF NOT EXISTS business_ideas (
   owner_id BIGINT UNSIGNED NOT NULL,
   title VARCHAR(150) NOT NULL,
   description TEXT NOT NULL,
+  industry VARCHAR(100) NOT NULL,
+  expires_at DATETIME NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_business_ideas_created_at (created_at),
   KEY idx_business_ideas_owner (owner_role, owner_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS marketplace_chats (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  listing_type ENUM('product', 'service') NOT NULL,
+  listing_id BIGINT UNSIGNED NOT NULL,
+  seller_role ENUM('student', 'lecturer', 'admin', 'investor') NOT NULL,
+  seller_id BIGINT UNSIGNED NOT NULL,
+  buyer_role ENUM('student', 'lecturer', 'admin', 'investor') NOT NULL,
+  buyer_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_marketplace_chat_listing_buyer
+    (listing_type, listing_id, buyer_role, buyer_id),
+  KEY idx_marketplace_chats_seller (seller_role, seller_id, updated_at),
+  KEY idx_marketplace_chats_buyer (buyer_role, buyer_id, updated_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS marketplace_chat_messages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  chat_id BIGINT UNSIGNED NOT NULL,
+  sender_role ENUM('student', 'lecturer', 'admin', 'investor') NOT NULL,
+  sender_id BIGINT UNSIGNED NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_marketplace_chat_messages_chat (chat_id, id),
+  CONSTRAINT fk_marketplace_chat_message_chat
+    FOREIGN KEY (chat_id) REFERENCES marketplace_chats (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS bursaries (
@@ -157,6 +230,115 @@ CREATE TABLE IF NOT EXISTS bursaries (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_bursaries_created_at (created_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS entrepreneurial_posts (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  author_role ENUM('lecturer', 'admin') NOT NULL,
+  author_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_entrepreneurial_posts_created (created_at, id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS entrepreneurial_post_comments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  post_id BIGINT UNSIGNED NOT NULL,
+  student_id BIGINT UNSIGNED NOT NULL,
+  body VARCHAR(3000) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_entrepreneurial_comments_post (post_id, created_at, id),
+  CONSTRAINT fk_entrepreneurial_comment_post
+    FOREIGN KEY (post_id) REFERENCES entrepreneurial_posts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_entrepreneurial_comment_student
+    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS entrepreneurial_post_reactions (
+  post_id BIGINT UNSIGNED NOT NULL,
+  student_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (post_id, student_id),
+  CONSTRAINT fk_entrepreneurial_reaction_post
+    FOREIGN KEY (post_id) REFERENCES entrepreneurial_posts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_entrepreneurial_reaction_student
+    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS investor_chats (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  idea_id BIGINT UNSIGNED NOT NULL,
+  student_id BIGINT UNSIGNED NOT NULL,
+  investor_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_investor_chat_idea_investor (idea_id, investor_id),
+  KEY idx_investor_chats_student (student_id, updated_at),
+  KEY idx_investor_chats_investor (investor_id, updated_at),
+  CONSTRAINT fk_investor_chat_idea
+    FOREIGN KEY (idea_id) REFERENCES business_ideas (id) ON DELETE CASCADE,
+  CONSTRAINT fk_investor_chat_student
+    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+  CONSTRAINT fk_investor_chat_investor
+    FOREIGN KEY (investor_id) REFERENCES investors (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS investor_chat_messages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  chat_id BIGINT UNSIGNED NOT NULL,
+  sender_role ENUM('student', 'investor') NOT NULL,
+  sender_id BIGINT UNSIGNED NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_investor_chat_messages_chat (chat_id, id),
+  CONSTRAINT fk_investor_chat_message_chat
+    FOREIGN KEY (chat_id) REFERENCES investor_chats (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS idea_interests (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  idea_id BIGINT UNSIGNED NOT NULL,
+  student_id BIGINT UNSIGNED NOT NULL,
+  investor_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_idea_interest_idea_investor (idea_id, investor_id),
+  KEY idx_idea_interests_student (student_id, created_at),
+  CONSTRAINT fk_idea_interest_idea
+    FOREIGN KEY (idea_id) REFERENCES business_ideas (id) ON DELETE CASCADE,
+  CONSTRAINT fk_idea_interest_student
+    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+  CONSTRAINT fk_idea_interest_investor
+    FOREIGN KEY (investor_id) REFERENCES investors (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS idea_interest_payments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  interest_id BIGINT UNSIGNED NOT NULL,
+  gateway_reference VARCHAR(40) NOT NULL,
+  amount DECIMAL(8, 2) NOT NULL DEFAULT 200.00,
+  currency CHAR(3) NOT NULL DEFAULT 'ZAR',
+  payment_status ENUM('pending', 'paid', 'failed') NOT NULL DEFAULT 'pending',
+  checkout_token_hash CHAR(64) NULL,
+  checkout_expires_at DATETIME NULL,
+  payfast_payment_id VARCHAR(100) NULL,
+  verification_source ENUM('payfast', 'admin') NULL,
+  verified_by_admin_id BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_idea_interest_payment_interest (interest_id),
+  UNIQUE KEY uq_idea_interest_payment_reference (gateway_reference),
+  UNIQUE KEY uq_idea_interest_payment_checkout_token (checkout_token_hash),
+  UNIQUE KEY uq_idea_interest_payment_payfast_id (payfast_payment_id),
+  KEY idx_idea_interest_payments_status (payment_status, created_at),
+  CONSTRAINT fk_idea_interest_payment_interest
+    FOREIGN KEY (interest_id) REFERENCES idea_interests (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 INSERT INTO communities (name, description)

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'chats.dart';
 import 'feature_api.dart';
 
 class MarketplacePage extends StatefulWidget {
@@ -22,6 +23,8 @@ class MarketplacePage extends StatefulWidget {
 class _MarketplacePageState extends State<MarketplacePage> {
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _services = [];
+  final _searchController = TextEditingController();
+  String? _selectedCategory;
   bool _isLoading = true;
   String? _error;
   bool get _canCreate => widget.profile['role'] == 'student';
@@ -30,6 +33,12 @@ class _MarketplacePageState extends State<MarketplacePage> {
   void initState() {
     super.initState();
     _loadListings();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadListings() async {
@@ -89,25 +98,31 @@ class _MarketplacePageState extends State<MarketplacePage> {
           productId: listingId,
           images: listing.images,
         );
+      } else if (listing.type == 'service' && listing.images.isNotEmpty) {
+        await FeatureApi.uploadServicePriceList(
+          token: widget.token,
+          serviceId: listingId,
+          image: listing.images.single,
+        );
       }
       await _loadListings();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            listing.images.isEmpty || listing.type != 'product'
+            listing.images.isEmpty
                 ? 'Your listing was added.'
-                : 'Your listing and product photos were added.',
+                : listing.type == 'product'
+                ? 'Your listing and product photos were added.'
+                : 'Your service and price-list image were added.',
           ),
         ),
       );
     } on FeatureApiException catch (error) {
-      if (listingId != null &&
-          listing.type == 'product' &&
-          listing.images.isNotEmpty) {
+      if (listingId != null && listing.images.isNotEmpty) {
         await _loadListings();
         _showError(
-          'The listing was created, but its photos could not be uploaded: ${error.message}',
+          'The listing was created, but its image could not be uploaded: ${error.message}',
         );
       } else {
         _showError(error.message);
@@ -137,6 +152,12 @@ class _MarketplacePageState extends State<MarketplacePage> {
           productId: listing['id'] as int,
           images: edited.images,
         );
+      } else if (type == 'service' && edited.images.isNotEmpty) {
+        await FeatureApi.uploadServicePriceList(
+          token: widget.token,
+          serviceId: listing['id'] as int,
+          image: edited.images.single,
+        );
       }
       await _loadListings();
       if (!mounted) return;
@@ -145,15 +166,17 @@ class _MarketplacePageState extends State<MarketplacePage> {
           content: Text(
             edited.images.isEmpty
                 ? 'Your listing was updated.'
-                : 'Your listing and product photos were updated.',
+                : type == 'product'
+                ? 'Your listing and product photos were updated.'
+                : 'Your service and price-list image were updated.',
           ),
         ),
       );
     } on FeatureApiException catch (error) {
-      if (type == 'product' && edited.images.isNotEmpty) {
+      if (edited.images.isNotEmpty) {
         await _loadListings();
         _showError(
-          'The listing was updated, but its photos could not be uploaded: ${error.message}',
+          'The listing was updated, but its image could not be uploaded: ${error.message}',
         );
       } else {
         _showError(error.message);
@@ -192,6 +215,33 @@ class _MarketplacePageState extends State<MarketplacePage> {
     }
   }
 
+  Future<void> _chatAboutListing(
+    Map<String, dynamic> listing,
+    String type,
+  ) async {
+    try {
+      final chatId = await FeatureApi.openMarketplaceChat(
+        token: widget.token,
+        listingType: type,
+        listingId: listing['id'] as int,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PrivateChatPage(
+            token: widget.token,
+            chatId: chatId,
+            chatType: 'marketplace',
+            title: listing['seller'] as String? ?? 'Seller',
+            subtitle: listing['title'] as String? ?? 'Marketplace listing',
+          ),
+        ),
+      );
+    } on FeatureApiException catch (error) {
+      _showError(error.message);
+    }
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -200,72 +250,247 @@ class _MarketplacePageState extends State<MarketplacePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Marketplace')),
-      floatingActionButton: _canCreate
-          ? FloatingActionButton.extended(
-              key: const ValueKey('create-listing-button'),
-              onPressed: _isLoading ? null : _createListing,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Sell or advertise'),
-            )
-          : null,
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_error!, textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _loadListings,
-                      child: const Text('Try again'),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 96),
-              children: [
-                Text(
-                  'Campus finds and student services',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                const Text('Discover what students are making and offering.'),
-                const SizedBox(height: 16),
-                _ListingSection(
-                  title: 'Products',
-                  listings: _products,
-                  type: 'product',
-                  token: widget.token,
-                  onEdit: _editListing,
-                  onDelete: _deleteListing,
-                ),
-                _ListingSection(
-                  title: 'Services',
-                  listings: _services,
-                  type: 'service',
-                  token: widget.token,
-                  onEdit: _editListing,
-                  onDelete: _deleteListing,
-                ),
-                if (_products.isEmpty && _services.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'No listings yet. Be the first to add a product or service.',
-                      textAlign: TextAlign.center,
-                    ),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Marketplace'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Marketplace'),
+              Tab(text: 'My Listings'),
+            ],
+          ),
+        ),
+        floatingActionButton: _canCreate
+            ? FloatingActionButton.extended(
+                key: const ValueKey('create-listing-button'),
+                onPressed: _isLoading ? null : _createListing,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Sell or advertise'),
+              )
+            : null,
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_error!, textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed: _loadListings,
+                        child: const Text('Try again'),
+                      ),
+                    ],
                   ),
+                ),
+              )
+            : TabBarView(
+                children: [
+                  _listingTab(onlyMine: false),
+                  _listingTab(onlyMine: true),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _listingTab({required bool onlyMine}) {
+    List<Map<String, dynamic>> visibleListings(
+      List<Map<String, dynamic>> listings,
+      String type,
+    ) => listings.where((listing) {
+      if (listing['is_mine'] != onlyMine) return false;
+      if (_selectedCategory != null && _selectedCategory != type) return false;
+      final query = _searchController.text.trim().toLowerCase();
+      if (query.isEmpty) return true;
+      final searchableText = [
+        listing['title'],
+        listing['description'],
+        listing['seller'],
+        listing['price'],
+      ].whereType<Object>().join(' ').toLowerCase();
+      return searchableText.contains(query);
+    }).toList();
+
+    final products = visibleListings(_products, 'product');
+    final services = visibleListings(_services, 'service');
+    return ListView(
+      key: ValueKey(
+        onlyMine ? 'my-marketplace-listings' : 'marketplace-listings',
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 96),
+      children: [
+        Text(
+          onlyMine ? 'Your marketplace listings' : 'Campus finds and services',
+          style: Theme.of(context).textTheme.titleLarge
+              ?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          onlyMine
+              ? 'Manage the products and services you have posted.'
+              : 'Discover products and services from the Eduvos community.',
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          key: const ValueKey('marketplace-search-field'),
+          controller: _searchController,
+          onChanged: (_) => setState(() {
+            _selectedCategory = null;
+          }),
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Search products and services',
+            prefixIcon: const Icon(Icons.search_rounded),
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.surface,
+            suffixIcon: _searchController.text.isEmpty
+                ? null
+                : IconButton(
+                    key: const ValueKey('clear-marketplace-search'),
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _MarketplaceCategoryPill(
+                    key: const ValueKey('marketplace-services-filter'),
+                    label: 'Services',
+                    icon: Icons.handyman_outlined,
+                    selected: _selectedCategory == 'service',
+                    onTap: () => setState(() {
+                      _selectedCategory = _selectedCategory == 'service'
+                          ? null
+                          : 'service';
+                    }),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _MarketplaceCategoryPill(
+                    key: const ValueKey('marketplace-products-filter'),
+                    label: 'Products',
+                    icon: Icons.shopping_bag_outlined,
+                    selected: _selectedCategory == 'product',
+                    onTap: () => setState(() {
+                      _selectedCategory = _selectedCategory == 'product'
+                          ? null
+                          : 'product';
+                    }),
+                  ),
+                ),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _ListingSection(
+          title: 'Products',
+          listings: products,
+          type: 'product',
+          token: widget.token,
+          onEdit: _editListing,
+          onDelete: _deleteListing,
+          onChat: _chatAboutListing,
+        ),
+        _ListingSection(
+          title: 'Services',
+          listings: services,
+          type: 'service',
+          token: widget.token,
+          onEdit: _editListing,
+          onDelete: _deleteListing,
+          onChat: _chatAboutListing,
+        ),
+        if (products.isEmpty && services.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              _searchController.text.trim().isNotEmpty
+                  ? 'No listings match your search.'
+                  : _selectedCategory != null
+                  ? 'No ${_selectedCategory == 'product' ? 'products' : 'services'} found.'
+                  : onlyMine
+                  ? 'You have not posted any marketplace listings yet.'
+                  : 'No listings yet. Be the first to add a product or service.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _MarketplaceCategoryPill extends StatelessWidget {
+  const _MarketplaceCategoryPill({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: selected ? colors.primary : colors.surface,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 18,
+                  color: selected ? colors.onPrimary : colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? colors.onPrimary : colors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -278,6 +503,7 @@ class _ListingSection extends StatelessWidget {
     required this.token,
     required this.onEdit,
     required this.onDelete,
+    required this.onChat,
   });
 
   final String title;
@@ -286,6 +512,7 @@ class _ListingSection extends StatelessWidget {
   final String token;
   final Future<void> Function(Map<String, dynamic>, String) onEdit;
   final Future<void> Function(Map<String, dynamic>, String) onDelete;
+  final Future<void> Function(Map<String, dynamic>, String) onChat;
 
   @override
   Widget build(BuildContext context) {
@@ -303,50 +530,129 @@ class _ListingSection extends StatelessWidget {
         ),
         for (final listing in listings)
           Card(
-            margin: const EdgeInsets.only(bottom: 12),
+            clipBehavior: Clip.antiAlias,
+            margin: const EdgeInsets.only(bottom: 18),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.storefront_outlined),
-                  ),
-                  title: Text(listing['title'] as String? ?? ''),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      '${listing['description'] ?? ''}\n'
-                      'Posted by ${listing['seller'] ?? 'Student'}'
-                      '${listing['price'] == null ? '' : ' · ${listing['price']}'}',
+                Column(
+                  children: [
+                    _ListingImageCard(
+                      images: listing['images'] is List
+                          ? (listing['images'] as List)
+                                .whereType<Map>()
+                                .map(Map<String, dynamic>.from)
+                                .toList()
+                          : const [],
+                      type: type,
                     ),
-                  ),
-                  isThreeLine: true,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    if (listing['images'] is List)
+                      _ListingImageGallery(
+                        images: (listing['images'] as List)
+                            .whereType<Map>()
+                            .map(Map<String, dynamic>.from)
+                            .toList(),
+                        token: token,
+                        type: type,
+                      ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (listing['can_edit'] == true)
-                        IconButton(
-                          key: ValueKey('edit-listing-${listing['id']}'),
-                          tooltip: 'Edit listing',
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => onEdit(listing, type),
-                        ),
-                      if (listing['can_delete'] == true)
-                        IconButton(
-                          tooltip: 'Delete listing',
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => onDelete(listing, type),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              listing['title'] as String? ?? '',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          if (listing['price'] != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                '${listing['price']}',
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        listing['description'] as String? ?? '',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 14,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .secondaryContainer,
+                            child: Icon(
+                              Icons.person_outline_rounded,
+                              size: 17,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSecondaryContainer,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Posted by ${listing['seller'] ?? 'Student'}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                          if (listing['can_edit'] == true)
+                            IconButton(
+                              key: ValueKey('edit-listing-${listing['id']}'),
+                              tooltip: 'Edit listing',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () => onEdit(listing, type),
+                            ),
+                          if (listing['can_delete'] == true)
+                            IconButton(
+                              tooltip: 'Delete listing',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => onDelete(listing, type),
+                            ),
+                        ],
+                      ),
+                      if (listing['can_chat'] == true)
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            key: ValueKey('chat-listing-${listing['id']}'),
+                            onPressed: () => onChat(listing, type),
+                            icon: const Icon(Icons.chat_bubble_outline_rounded),
+                            label: const Text('Message seller'),
+                          ),
                         ),
                     ],
                   ),
                 ),
-                if (type == 'product' && listing['images'] is List)
-                  _ProductImageGallery(
-                    images: (listing['images'] as List)
-                        .whereType<Map>()
-                        .map(Map<String, dynamic>.from)
-                        .toList(),
-                    token: token,
-                  ),
               ],
             ),
           ),
@@ -394,6 +700,8 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
   bool get _isEditing => widget.existingListing != null;
   int get _existingImageCount =>
       (widget.existingListing?['images'] as List?)?.length ?? 0;
+  int get _imageLimit => _type == 'product' ? 5 : 1;
+  int get _imageCountForLimit => _type == 'service' ? 0 : _existingImageCount;
 
   @override
   void initState() {
@@ -439,7 +747,8 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
   }
 
   Future<void> _pickImages() async {
-    final remaining = 5 - _existingImageCount - _selectedImages.length;
+    final remaining =
+        _imageLimit - _imageCountForLimit - _selectedImages.length;
     if (remaining <= 0) return;
     setState(() => _isPickingImages = true);
     try {
@@ -453,7 +762,7 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
         final bytes = await file.readAsBytes();
         if (bytes.length > 5 * 1024 * 1024) {
           throw const FeatureApiException(
-            'Each product photo must be smaller than 5 MB.',
+            'Each listing image must be smaller than 5 MB.',
           );
         }
         selected.add(_PickedProductImage(file: file, bytes: bytes));
@@ -463,7 +772,7 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
     } on FeatureApiException catch (error) {
       _showDialogError(error.message);
     } catch (error) {
-      _showDialogError('Could not load the selected product photos: $error');
+      _showDialogError('Could not load the selected listing image: $error');
     } finally {
       if (mounted) setState(() => _isPickingImages = false);
     }
@@ -478,8 +787,25 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(
-        _isEditing ? 'Edit your listing' : 'Create a marketplace listing',
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            child: Icon(
+              _isEditing
+                  ? Icons.edit_outlined
+                  : Icons.add_shopping_cart_rounded,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _isEditing ? 'Edit your listing' : 'Create a marketplace listing',
+            ),
+          ),
+        ],
       ),
       content: SingleChildScrollView(
         child: Column(
@@ -521,12 +847,18 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
                 decimal: true,
               ),
             ),
-            if (_type == 'product') ...[
+            ...[
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Product photos (${_existingImageCount + _selectedImages.length}/5)',
+                  _type == 'product'
+                      ? 'Product photos (${_existingImageCount + _selectedImages.length}/$_imageLimit)'
+                      : _selectedImages.isNotEmpty
+                      ? 'New service price list selected'
+                      : _existingImageCount > 0
+                      ? 'Replace the existing service price list'
+                      : 'Service price list image',
                 ),
               ),
               const SizedBox(height: 8),
@@ -550,8 +882,8 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
                           right: 0,
                           top: 0,
                           child: IconButton.filledTonal(
-                            key: ValueKey('remove-product-photo-$index'),
-                            tooltip: 'Remove selected photo',
+                            key: ValueKey('remove-listing-image-$index'),
+                            tooltip: 'Remove selected image',
                             visualDensity: VisualDensity.compact,
                             onPressed: () {
                               setState(() => _selectedImages.removeAt(index));
@@ -561,9 +893,12 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
                         ),
                       ],
                     ),
-                  if (_existingImageCount + _selectedImages.length < 5)
+                  if (_type == 'service'
+                      ? _selectedImages.isEmpty
+                      : _existingImageCount + _selectedImages.length <
+                            _imageLimit)
                     OutlinedButton.icon(
-                      key: const ValueKey('add-product-photos-button'),
+                      key: const ValueKey('add-listing-images-button'),
                       onPressed: _isPickingImages ? null : _pickImages,
                       icon: _isPickingImages
                           ? const SizedBox.square(
@@ -571,14 +906,26 @@ class _MarketplaceListingDialogState extends State<_MarketplaceListingDialog> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.add_photo_alternate_outlined),
-                      label: Text(_isPickingImages ? 'Loading' : 'Add photos'),
+                      label: Text(
+                        _isPickingImages
+                            ? 'Loading'
+                            : _type == 'product'
+                            ? 'Add photos'
+                            : _existingImageCount > 0
+                            ? 'Replace price list'
+                            : 'Add price list',
+                      ),
                     ),
                 ],
               ),
               const SizedBox(height: 4),
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Choose up to 5 JPEG, PNG, or WebP images.'),
+                child: Text(
+                  _type == 'product'
+                      ? 'Choose up to 5 JPEG, PNG, or WebP images.'
+                      : 'Add one JPEG, PNG, or WebP image showing your fees or price list.',
+                ),
               ),
             ],
           ],
@@ -605,11 +952,122 @@ class _PickedProductImage {
   final Uint8List bytes;
 }
 
-class _ProductImageGallery extends StatelessWidget {
-  const _ProductImageGallery({required this.images, required this.token});
+class _ListingImageCard extends StatelessWidget {
+  const _ListingImageCard({required this.images, required this.type});
+
+  final List<Map<String, dynamic>> images;
+  final String type;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 220,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (images.isEmpty)
+            ColoredBox(
+              color: colors.surfaceContainerHighest,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    type == 'product'
+                        ? Icons.shopping_bag_outlined
+                        : Icons.handyman_outlined,
+                    size: 42,
+                    color: colors.primary,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    type == 'product' ? 'Product listing' : 'Service listing',
+                  ),
+                ],
+              ),
+            )
+          else
+            PageView.builder(
+              itemCount: images.length,
+              itemBuilder: (context, index) {
+                final id = images[index]['id'];
+                if (id is! int) {
+                  return ColoredBox(
+                    color: colors.surfaceContainerHighest,
+                    child: const Icon(Icons.broken_image_outlined),
+                  );
+                }
+                return Image.network(
+                  FeatureApi.listingImageUrl(id, type: type).toString(),
+                  fit: BoxFit.cover,
+                  headers: {'Authorization': '******'},
+                  errorBuilder: (_, _, _) => ColoredBox(
+                    color: colors.surfaceContainerHighest,
+                    child: const Center(
+                      child: Icon(Icons.broken_image_outlined, size: 36),
+                    ),
+                  ),
+                );
+              },
+            ),
+          Positioned(
+            top: 12,
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.94),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                type == 'product' ? 'PRODUCT' : 'SERVICE',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                ),
+              ),
+            ),
+          ),
+          if (images.length > 1)
+            Positioned(
+              right: 12,
+              top: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${images.length} photos',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ListingImageGallery extends StatelessWidget {
+  const _ListingImageGallery({
+    required this.images,
+    required this.token,
+    required this.type,
+  });
 
   final List<Map<String, dynamic>> images;
   final String token;
+  final String type;
 
   @override
   Widget build(BuildContext context) {
@@ -627,7 +1085,7 @@ class _ProductImageGallery extends StatelessWidget {
           return ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: Image.network(
-              FeatureApi.productImageUrl(id).toString(),
+              FeatureApi.listingImageUrl(id, type: type).toString(),
               width: 150,
               height: 120,
               fit: BoxFit.cover,

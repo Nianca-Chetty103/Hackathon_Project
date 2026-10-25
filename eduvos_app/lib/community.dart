@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'chats.dart';
 import 'feature_api.dart';
 
 class CommunitiesPage extends StatefulWidget {
@@ -63,10 +64,59 @@ class _CommunitiesPageState extends State<CommunitiesPage> {
     }
   }
 
+  Future<void> _createCommunity() async {
+    final community = await showDialog<_NewCommunity>(
+      context: context,
+      builder: (context) => const _CreateCommunityDialog(),
+    );
+    if (community == null || !mounted) return;
+    try {
+      await FeatureApi.createCommunity(
+        token: widget.token,
+        name: community.name,
+        description: community.description,
+      );
+      await _loadCommunities();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your community was created.')),
+      );
+    } on FeatureApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
+  Future<void> _openCommunityChat(Map<String, dynamic> community) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PrivateChatPage(
+          token: widget.token,
+          chatId: community['id'] as int,
+          chatType: 'community',
+          title: community['name'] as String? ?? 'Community chat',
+          subtitle: 'Shared community conversation',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Communities')),
+      appBar: AppBar(
+        title: const Text('Communities'),
+        actions: [
+          IconButton(
+            key: const ValueKey('create-community-button'),
+            tooltip: 'Create community',
+            onPressed: _createCommunity,
+            icon: const Icon(Icons.add_circle_outline_rounded),
+          ),
+        ],
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -103,6 +153,7 @@ class _CommunitiesPageState extends State<CommunitiesPage> {
                   _CommunityCard(
                     community: community,
                     onToggle: () => _toggleMembership(community),
+                    onOpenChat: () => _openCommunityChat(community),
                   ),
                 if (_communities.isEmpty)
                   const Padding(
@@ -116,10 +167,15 @@ class _CommunitiesPageState extends State<CommunitiesPage> {
 }
 
 class _CommunityCard extends StatelessWidget {
-  const _CommunityCard({required this.community, required this.onToggle});
+  const _CommunityCard({
+    required this.community,
+    required this.onToggle,
+    required this.onOpenChat,
+  });
 
   final Map<String, dynamic> community;
   final VoidCallback onToggle;
+  final VoidCallback onOpenChat;
 
   @override
   Widget build(BuildContext context) {
@@ -154,11 +210,24 @@ class _CommunityCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                OutlinedButton(
-                  key: ValueKey('join-${community['name']}'),
-                  onPressed: onToggle,
-                  child: Text(isJoined ? 'Leave' : 'Join'),
-                ),
+                if (isJoined) ...[
+                  IconButton(
+                    key: ValueKey('community-chat-${community['id']}'),
+                    tooltip: 'Open community chat',
+                    onPressed: onOpenChat,
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  ),
+                  OutlinedButton(
+                    key: ValueKey('join-${community['name']}'),
+                    onPressed: onToggle,
+                    child: const Text('Leave'),
+                  ),
+                ] else
+                  FilledButton(
+                    key: ValueKey('join-${community['name']}'),
+                    onPressed: onToggle,
+                    child: const Text('Join'),
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -177,6 +246,87 @@ class _CommunityCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _NewCommunity {
+  const _NewCommunity({required this.name, required this.description});
+
+  final String name;
+  final String description;
+}
+
+class _CreateCommunityDialog extends StatefulWidget {
+  const _CreateCommunityDialog();
+
+  @override
+  State<_CreateCommunityDialog> createState() => _CreateCommunityDialogState();
+}
+
+class _CreateCommunityDialogState extends State<_CreateCommunityDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create a community'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              key: const ValueKey('community-name-field'),
+              controller: _nameController,
+              maxLength: 120,
+              decoration: const InputDecoration(labelText: 'Community name'),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Enter a community name.'
+                  : null,
+            ),
+            TextFormField(
+              key: const ValueKey('community-description-field'),
+              controller: _descriptionController,
+              maxLength: 500,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Description'),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Enter a short description.'
+                  : null,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('submit-create-community'),
+          onPressed: () {
+            if (!_formKey.currentState!.validate()) return;
+            Navigator.pop(
+              context,
+              _NewCommunity(
+                name: _nameController.text.trim(),
+                description: _descriptionController.text.trim(),
+              ),
+            );
+          },
+          child: const Text('Create'),
+        ),
+      ],
     );
   }
 }

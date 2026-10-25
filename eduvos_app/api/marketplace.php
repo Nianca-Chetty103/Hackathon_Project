@@ -26,10 +26,22 @@ try {
             $productId = (int) $image['product_id'];
             $imagesByProduct[$productId][] = ['id' => (int) $image['id']];
         }
+        $imagesByService = [];
+        $serviceImageStatement = $connection->query(
+            'SELECT id, service_id FROM service_images ORDER BY id'
+        );
+        foreach ($serviceImageStatement->fetchAll(PDO::FETCH_ASSOC) as $image) {
+            $serviceId = (int) $image['service_id'];
+            $imagesByService[$serviceId][] = ['id' => (int) $image['id']];
+        }
         foreach ($products as &$product) {
             $product['images'] = $imagesByProduct[(int) $product['id']] ?? [];
         }
         unset($product);
+        foreach ($services as &$service) {
+            $service['images'] = $imagesByService[(int) $service['id']] ?? [];
+        }
+        unset($service);
 
         foreach (['products' => &$products, 'services' => &$services] as &$items) {
             foreach ($items as &$item) {
@@ -41,6 +53,7 @@ try {
                     && $item['owner_id'] === $account['account_id'];
                 $item['can_edit'] = $item['is_mine'];
                 $item['can_delete'] = $item['is_mine'] || $account['account_role'] === 'admin';
+                $item['can_chat'] = !$item['is_mine'];
             }
             unset($item);
         }
@@ -92,40 +105,60 @@ try {
 
         if ($action === 'upload_images') {
             if ($account['account_role'] !== 'student') {
-                api_respond(403, ['success' => false, 'message' => 'Only student listing owners can upload product photos.']);
+                api_respond(403, ['success' => false, 'message' => 'Only student listing owners can upload listing images.']);
             }
-            $productId = filter_var($data['product_id'] ?? null, FILTER_VALIDATE_INT);
-            if (!$productId || $productId < 1) {
-                api_respond(422, ['success' => false, 'message' => 'Choose a valid product listing.']);
+            $listingType = $data['type'] ?? 'product';
+            if (!is_string($listingType) || !in_array($listingType, ['product', 'service'], true)) {
+                api_respond(422, ['success' => false, 'message' => 'Choose a valid listing type.']);
             }
+            $listingId = filter_var(
+                $data['listing_id'] ?? $data[$listingType . '_id'] ?? $data['product_id'] ?? null,
+                FILTER_VALIDATE_INT
+            );
+            if (!$listingId || $listingId < 1) {
+                api_respond(422, ['success' => false, 'message' => 'Choose a valid listing.']);
+            }
+            $listingTable = $listingType === 'product' ? 'products' : 'services';
+            $imageTable = $listingType === 'product' ? 'product_images' : 'service_images';
+            $listingIdColumn = $listingType === 'product' ? 'product_id' : 'service_id';
             $ownerStatement = $connection->prepare(
-                'SELECT 1 FROM products
+                'SELECT 1 FROM ' . $listingTable . '
                  WHERE id = :id AND owner_role = :owner_role AND owner_id = :owner_id'
             );
             $ownerStatement->execute([
-                'id' => $productId,
+                'id' => $listingId,
                 'owner_role' => $account['account_role'],
                 'owner_id' => $account['account_id'],
             ]);
             if (!$ownerStatement->fetchColumn()) {
-                api_respond(404, ['success' => false, 'message' => 'Product not found or you cannot add photos to it.']);
+                api_respond(404, ['success' => false, 'message' => 'Listing not found or you cannot add images to it.']);
             }
 
             $uploadedFiles = $_FILES['images'] ?? null;
             if (!is_array($uploadedFiles) || !isset($uploadedFiles['name']) ||
                 !is_array($uploadedFiles['name'])) {
-                api_respond(422, ['success' => false, 'message' => 'Select at least one product photo.']);
+                api_respond(422, ['success' => false, 'message' => 'Select an image for your listing.']);
             }
             $fileCount = count($uploadedFiles['name']);
-            if ($fileCount < 1 || $fileCount > 5) {
-                api_respond(422, ['success' => false, 'message' => 'Upload between 1 and 5 photos at a time.']);
+            $maximumImages = $listingType === 'product' ? 5 : 1;
+            if ($fileCount < 1 || $fileCount > $maximumImages) {
+                api_respond(422, ['success' => false, 'message' => 'A service can have one price-list image; products can have up to five photos.']);
             }
-            $countStatement = $connection->prepare(
-                'SELECT COUNT(*) FROM product_images WHERE product_id = :product_id'
-            );
-            $countStatement->execute(['product_id' => $productId]);
-            if ((int) $countStatement->fetchColumn() + $fileCount > 5) {
-                api_respond(422, ['success' => false, 'message' => 'A product can have up to 5 photos.']);
+            $previousImagePaths = [];
+            if ($listingType === 'service') {
+                $existingImages = $connection->prepare(
+                    'SELECT image_path FROM service_images WHERE service_id = :listing_id'
+                );
+                $existingImages->execute(['listing_id' => $listingId]);
+                $previousImagePaths = $existingImages->fetchAll(PDO::FETCH_COLUMN);
+            } else {
+                $countStatement = $connection->prepare(
+                    'SELECT COUNT(*) FROM product_images WHERE product_id = :listing_id'
+                );
+                $countStatement->execute(['listing_id' => $listingId]);
+                if ((int) $countStatement->fetchColumn() + $fileCount > $maximumImages) {
+                    api_respond(422, ['success' => false, 'message' => 'A product can have up to five photos.']);
+                }
             }
 
             $finfo = new finfo(FILEINFO_MIME_TYPE);
@@ -141,11 +174,11 @@ try {
                 $size = $uploadedFiles['size'][$index] ?? 0;
                 if ($error !== UPLOAD_ERR_OK || !is_uploaded_file($temporaryPath) ||
                     $size < 1 || $size > 5 * 1024 * 1024) {
-                    api_respond(422, ['success' => false, 'message' => 'Each photo must be a valid image smaller than 5 MB.']);
+                    api_respond(422, ['success' => false, 'message' => 'Each image must be a valid image smaller than 5 MB.']);
                 }
                 $mimeType = $finfo->file($temporaryPath);
                 if (!is_string($mimeType) || !isset($allowedMimeTypes[$mimeType])) {
-                    api_respond(422, ['success' => false, 'message' => 'Photos must be JPEG, PNG, or WebP images.']);
+                    api_respond(422, ['success' => false, 'message' => 'Images must be JPEG, PNG, or WebP files.']);
                 }
                 $validFiles[] = [
                     'temporary_path' => $temporaryPath,
@@ -155,19 +188,25 @@ try {
                 ];
             }
 
-            $uploadDirectory = __DIR__ . '/uploads/product_images';
+            $uploadDirectory = __DIR__ . '/uploads/' . $listingType . '_images';
             if (!is_dir($uploadDirectory) &&
                 !mkdir($uploadDirectory, 0750, true) && !is_dir($uploadDirectory)) {
-                error_log('Eduvos Marketplace could not create product image directory.');
-                api_respond(500, ['success' => false, 'message' => 'Product photo storage is unavailable.']);
+                error_log('Eduvos Marketplace could not create ' . $listingType . ' image directory.');
+                api_respond(500, ['success' => false, 'message' => 'Listing image storage is unavailable.']);
             }
 
             $savedPaths = [];
             try {
                 $connection->beginTransaction();
+                if ($listingType === 'service' && $previousImagePaths !== []) {
+                    $connection->prepare(
+                        'DELETE FROM service_images WHERE service_id = :listing_id'
+                    )->execute(['listing_id' => $listingId]);
+                }
                 $insert = $connection->prepare(
-                    'INSERT INTO product_images (product_id, image_path, mime_type, file_size)
-                     VALUES (:product_id, :image_path, :mime_type, :file_size)'
+                    'INSERT INTO ' . $imageTable . '
+                        (' . $listingIdColumn . ', image_path, mime_type, file_size)
+                     VALUES (:listing_id, :image_path, :mime_type, :file_size)'
                 );
                 foreach ($validFiles as $file) {
                     $fileName = bin2hex(random_bytes(24)) . '.' . $file['extension'];
@@ -177,30 +216,36 @@ try {
                     }
                     $savedPaths[] = $destination;
                     $insert->execute([
-                        'product_id' => $productId,
-                        'image_path' => 'uploads/product_images/' . $fileName,
+                        'listing_id' => $listingId,
+                        'image_path' => 'uploads/' . $listingType . '_images/' . $fileName,
                         'mime_type' => $file['mime_type'],
                         'file_size' => $file['size'],
                     ]);
                 }
                 $connection->commit();
+                foreach ($previousImagePaths as $previousImagePath) {
+                    $absolutePath = __DIR__ . '/' . $previousImagePath;
+                    if (is_file($absolutePath) && !unlink($absolutePath)) {
+                        error_log('Eduvos Marketplace could not remove replaced service image: ' . $absolutePath);
+                    }
+                }
             } catch (Throwable $exception) {
                 if ($connection->inTransaction()) {
                     $connection->rollBack();
                 }
                 foreach ($savedPaths as $savedPath) {
                     if (is_file($savedPath) && !unlink($savedPath)) {
-                        error_log('Eduvos Marketplace could not remove an incomplete product photo: ' . $savedPath);
+                        error_log('Eduvos Marketplace could not remove an incomplete listing image: ' . $savedPath);
                     }
                 }
                 if ($exception instanceof PDOException) {
                     throw $exception;
                 }
-                error_log('Eduvos Marketplace product photo upload failed: ' . $exception->getMessage());
-                api_respond(500, ['success' => false, 'message' => 'A product photo could not be saved.']);
+                error_log('Eduvos Marketplace listing image upload failed: ' . $exception->getMessage());
+                api_respond(500, ['success' => false, 'message' => 'A listing image could not be saved.']);
             }
 
-            api_respond(201, ['success' => true, 'message' => 'Product photos uploaded.']);
+            api_respond(201, ['success' => true, 'message' => 'Listing images uploaded.']);
         }
 
         if ($action === 'update') {
@@ -262,14 +307,14 @@ try {
             }
 
             $table = $type === 'product' ? 'products' : 'services';
-            $imagePaths = [];
-            if ($type === 'product') {
-                $images = $connection->prepare(
-                    'SELECT image_path FROM product_images WHERE product_id = :id'
-                );
-                $images->execute(['id' => $id]);
-                $imagePaths = $images->fetchAll(PDO::FETCH_COLUMN);
-            }
+            $imageTable = $type === 'product' ? 'product_images' : 'service_images';
+            $listingIdColumn = $type === 'product' ? 'product_id' : 'service_id';
+            $images = $connection->prepare(
+                'SELECT image_path FROM ' . $imageTable . '
+                 WHERE ' . $listingIdColumn . ' = :id'
+            );
+            $images->execute(['id' => $id]);
+            $imagePaths = $images->fetchAll(PDO::FETCH_COLUMN);
             $statement = $connection->prepare(
                 'DELETE FROM ' . $table . '
                  WHERE id = :id
@@ -287,7 +332,7 @@ try {
             foreach ($imagePaths as $imagePath) {
                 $absolutePath = __DIR__ . '/' . $imagePath;
                 if (is_file($absolutePath) && !unlink($absolutePath)) {
-                    error_log('Eduvos Marketplace could not remove product photo: ' . $absolutePath);
+                    error_log('Eduvos Marketplace could not remove listing image: ' . $absolutePath);
                 }
             }
             api_respond(200, ['success' => true, 'message' => 'Listing deleted.']);

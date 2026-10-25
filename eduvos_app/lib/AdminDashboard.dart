@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'chats.dart';
 import 'ProfileSettings.dart';
 import 'marketplace.dart';
 import 'tank.dart';
 import 'bursaries.dart';
+import 'blog.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({
@@ -130,6 +132,42 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 ),
                 Card(
                   child: ListTile(
+                    key: const ValueKey('admin-chats-button'),
+                    leading: const Icon(Icons.forum_outlined),
+                    title: const Text('Chats'),
+                    subtitle: const Text(
+                      'Continue private marketplace conversations.',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ChatInboxPage(
+                          token: widget.token,
+                          role: _profile['role'] as String? ?? 'admin',
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    key: const ValueKey('admin-idea-fees-button'),
+                    leading: const Icon(Icons.payments_outlined),
+                    title: const Text('Review Tank admin fees'),
+                    subtitle: const Text(
+                      'Review PayFast payments or verify a manual payment.',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            IdeaFeePaymentsPage(token: widget.token),
+                      ),
+                    ),
+                  ),
+                ),
+                Card(
+                  child: ListTile(
                     leading: const Icon(Icons.lightbulb_outline_rounded),
                     title: const Text('Moderate The Tank'),
                     subtitle: const Text(
@@ -158,6 +196,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         builder: (_) => BursariesPage(
                           token: widget.token,
                           canPost: _profile['role'] == 'admin',
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    key: const ValueKey('admin-blog-button'),
+                    leading: const Icon(Icons.article_outlined),
+                    title: const Text('Entrepreneurial Advice'),
+                    subtitle: const Text('Publish advice for students.'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => BlogPage(
+                          token: widget.token,
+                          role: _profile['role'] as String? ?? 'admin',
                         ),
                       ),
                     ),

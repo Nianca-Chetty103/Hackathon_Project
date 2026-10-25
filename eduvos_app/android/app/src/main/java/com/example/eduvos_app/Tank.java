@@ -21,13 +21,23 @@ final class Tank {
         String method = "GET";
         JSONObject body = null;
 
-        if ("create".equals(operation) || "delete".equals(operation)) {
+        if ("create".equals(operation)
+                || "delete".equals(operation)
+                || "interested".equals(operation)
+                || "fee_checkout".equals(operation)
+                || "fee_list".equals(operation)
+                || "fee_verify".equals(operation)) {
             method = "POST";
             body = new JSONObject();
             body.put("action", operation);
             copyValue(data, body, "title");
             copyValue(data, body, "description");
             copyValue(data, body, "id");
+            copyValue(data, body, "industry");
+            copyValue(data, body, "deadline");
+            copyValue(data, body, "idea_id");
+            copyValue(data, body, "interest_id");
+            copyValue(data, body, "payment_id");
         } else if (!"list".equals(operation)) {
             throw new IllegalArgumentException("Unknown Tank operation.");
         }

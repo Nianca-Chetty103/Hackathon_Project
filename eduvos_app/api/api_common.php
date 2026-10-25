@@ -91,6 +91,7 @@ function api_owner_name(PDO $connection, string $role, int $accountId): string
     $queries = [
         'student' => 'SELECT CONCAT(first_name, \' \', surname) FROM students WHERE id = :id',
         'lecturer' => 'SELECT CONCAT(first_name, \' \', surname) FROM lecturers WHERE id = :id',
+        'investor' => 'SELECT CONCAT(first_name, \' \', surname) FROM investors WHERE id = :id',
         'admin' => 'SELECT name FROM admins WHERE id = :id',
     ];
     if (!isset($queries[$role])) {

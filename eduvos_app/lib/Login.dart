@@ -5,9 +5,9 @@ import 'Home.dart';
 import 'auth_api.dart';
 
 const _navy = Color(0xFF172B4D);
-const _teal = Color(0xFF087E8B);
+const _primaryBlue = Color(0xFF2563EB);
 const _muted = Color(0xFF708096);
-const _page = Color(0xFFF5F8FA);
+const _page = Color(0xFFF3F7FF);
 
 final _appNavigatorKey = GlobalKey<NavigatorState>();
 final _appScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -38,16 +38,45 @@ class _EduvosAppState extends State<EduvosApp> {
         useMaterial3: true,
         scaffoldBackgroundColor: _page,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: _teal,
-          primary: _teal,
+          seedColor: _primaryBlue,
+          primary: _primaryBlue,
           surface: Colors.white,
         ),
         fontFamily: 'Roboto',
+        appBarTheme: const AppBarTheme(
+          backgroundColor: _page,
+          foregroundColor: _navy,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+        ),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 1,
+          shadowColor: _primaryBlue.withValues(alpha: 0.08),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFDCE6F5)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: _primaryBlue, width: 1.6),
+          ),
+        ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: _teal,
+          seedColor: _primaryBlue,
           brightness: Brightness.dark,
         ),
         fontFamily: 'Roboto',
@@ -75,6 +104,7 @@ class _AuthPageState extends State<AuthPage> {
   final _confirmPasswordController = TextEditingController();
   final _phoneNumberController = TextEditingController();
   final _institutionNumberController = TextEditingController();
+  final _companyNameController = TextEditingController();
 
   bool _isSignUp = false;
   bool _obscurePassword = true;
@@ -92,6 +122,7 @@ class _AuthPageState extends State<AuthPage> {
     _confirmPasswordController.dispose();
     _phoneNumberController.dispose();
     _institutionNumberController.dispose();
+    _companyNameController.dispose();
     super.dispose();
   }
 
@@ -102,6 +133,7 @@ class _AuthPageState extends State<AuthPage> {
       _acceptedTerms = false;
       if (value && _role == 'admin') _role = 'student';
       _institutionNumberController.clear();
+      _companyNameController.clear();
       _formKey.currentState?.reset();
     });
   }
@@ -134,6 +166,9 @@ class _AuthPageState extends State<AuthPage> {
                   : null,
               lecturerNumber: _role == 'lecturer'
                   ? _institutionNumberController.text.trim()
+                  : null,
+              companyName: _role == 'investor'
+                  ? _companyNameController.text.trim()
                   : null,
             )
           : await AuthApi.signIn(
@@ -253,7 +288,7 @@ class _AuthPageState extends State<AuthPage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _teal, width: 1.5),
+        borderSide: const BorderSide(color: _primaryBlue, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -334,11 +369,11 @@ class _AuthPageState extends State<AuthPage> {
           width: 58,
           height: 58,
           decoration: BoxDecoration(
-            color: _teal,
+            color: _primaryBlue,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: _teal.withValues(alpha: 0.2),
+                color: _primaryBlue.withValues(alpha: 0.2),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
@@ -404,14 +439,14 @@ class _AuthPageState extends State<AuthPage> {
           const SizedBox(height: 7),
           Text(
             _isSignUp
-                ? 'Create a student or lecturer account.'
+                ? 'Create a student, lecturer, or investor account.'
                 : 'Sign in to continue to your student portal.',
             style: const TextStyle(color: _muted, fontSize: 14, height: 1.45),
           ),
           if (_isSignUp) ...[
             const SizedBox(height: 8),
             const Text(
-              'Students need a student number. Lecturers need a lecturer number.',
+              'Students and lecturers need their institution number. Investor company name is optional.',
               style: TextStyle(color: _muted, fontSize: 12, height: 1.4),
             ),
           ],
@@ -480,30 +515,47 @@ class _AuthPageState extends State<AuthPage> {
                     },
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    key: ValueKey(
-                      _role == 'student'
-                          ? 'student-number-field'
-                          : 'lecturer-number-field',
+                  if (_role != 'investor') ...[
+                    TextFormField(
+                      key: ValueKey(
+                        _role == 'student'
+                            ? 'student-number-field'
+                            : 'lecturer-number-field',
+                      ),
+                      controller: _institutionNumberController,
+                      textInputAction: TextInputAction.next,
+                      decoration: _inputDecoration(
+                        label: _role == 'student'
+                            ? 'Student number'
+                            : 'Lecturer number',
+                        icon: Icons.numbers_rounded,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return _role == 'student'
+                              ? 'Enter your student number'
+                              : 'Enter your lecturer number';
+                        }
+                        return null;
+                      },
                     ),
-                    controller: _institutionNumberController,
-                    textInputAction: TextInputAction.next,
-                    decoration: _inputDecoration(
-                      label: _role == 'student'
-                          ? 'Student number'
-                          : 'Lecturer number',
-                      icon: Icons.numbers_rounded,
+                    const SizedBox(height: 16),
+                  ] else ...[
+                    TextFormField(
+                      key: const ValueKey('investor-company-field'),
+                      controller: _companyNameController,
+                      textCapitalization: TextCapitalization.words,
+                      textInputAction: TextInputAction.next,
+                      decoration: _inputDecoration(
+                        label: 'Company name (optional)',
+                        icon: Icons.business_outlined,
+                      ),
+                      validator: (value) => (value?.trim().length ?? 0) > 200
+                          ? 'Company name must be 200 characters or fewer'
+                          : null,
                     ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return _role == 'student'
-                            ? 'Enter your student number'
-                            : 'Enter your lecturer number';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
+                  ],
                 ] else ...[
                   _buildRoleField(key: const ValueKey('login-role-field')),
                   const SizedBox(height: 16),
@@ -600,7 +652,7 @@ class _AuthPageState extends State<AuthPage> {
                   child: FilledButton(
                     onPressed: _isSubmitting ? null : _submit,
                     style: FilledButton.styleFrom(
-                      backgroundColor: _teal,
+                      backgroundColor: _primaryBlue,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -657,6 +709,7 @@ class _AuthPageState extends State<AuthPage> {
       items: [
         const DropdownMenuItem(value: 'student', child: Text('Student')),
         const DropdownMenuItem(value: 'lecturer', child: Text('Lecturer')),
+        const DropdownMenuItem(value: 'investor', child: Text('Investor')),
         if (!_isSignUp)
           const DropdownMenuItem(value: 'admin', child: Text('Admin')),
       ],
@@ -744,7 +797,7 @@ class _AuthPageState extends State<AuthPage> {
               value: _acceptedTerms,
               onChanged: (value) =>
                   setState(() => _acceptedTerms = value ?? false),
-              activeColor: _teal,
+              activeColor: _primaryBlue,
             ),
           ),
           const Expanded(

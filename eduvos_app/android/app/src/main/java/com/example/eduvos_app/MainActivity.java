@@ -118,6 +118,14 @@ public class MainActivity extends FlutterActivity {
                     response = Bursaries.handle(
                             operation.substring("bursaries.".length()), endpoint, token, data
                     );
+                } else if (operation.startsWith("blog.")) {
+                    response = Blog.handle(
+                            operation.substring("blog.".length()), endpoint, token, data
+                    );
+                } else if (operation.startsWith("chats.")) {
+                    response = Chats.handle(
+                            operation.substring("chats.".length()), endpoint, token, data
+                    );
                 } else {
                     runOnUiThread(result::notImplemented);
                     return;
