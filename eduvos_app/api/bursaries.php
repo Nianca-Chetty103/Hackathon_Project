@@ -10,6 +10,9 @@ try {
     $method = $_SERVER['REQUEST_METHOD'];
 
     if ($method === 'GET') {
+        if ($account['account_role'] === 'investor') {
+            api_respond(403, ['success' => false, 'message' => 'Investors cannot view bursaries.']);
+        }
         $bursaries = $connection->query(
             'SELECT id, company_name, name, details, application_url, created_at
              FROM bursaries ORDER BY created_at DESC, id DESC'

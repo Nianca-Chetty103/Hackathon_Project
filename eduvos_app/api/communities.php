@@ -7,6 +7,12 @@ api_handle_options();
 try {
     $connection = get_database_connection();
     $account = api_authenticated_account($connection);
+    if ($account['account_role'] === 'investor') {
+        api_respond(403, [
+            'success' => false,
+            'message' => 'Investor accounts do not have access to communities.',
+        ]);
+    }
     $method = $_SERVER['REQUEST_METHOD'];
 
     if ($method === 'GET') {

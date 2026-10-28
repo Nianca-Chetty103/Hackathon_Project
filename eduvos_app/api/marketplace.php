@@ -54,6 +54,10 @@ try {
                 $item['can_edit'] = $item['is_mine'];
                 $item['can_delete'] = $item['is_mine'] || $account['account_role'] === 'admin';
                 $item['can_chat'] = !$item['is_mine'];
+                $item['can_purchase'] = $account['account_role'] === 'investor'
+                    && !$item['is_mine']
+                    && $item['price'] !== null
+                    && $item['price'] > 0;
             }
             unset($item);
         }
@@ -70,7 +74,9 @@ try {
         $action = $data['action'] ?? '';
 
         if ($action === 'create') {
-            api_require_student($account);
+            if ($account['account_role'] !== 'student') {
+                api_respond(403, ['success' => false, 'message' => 'Only students can post marketplace products or services.']);
+            }
             $type = $data['type'] ?? null;
             if (!is_string($type) || !in_array($type, ['product', 'service'], true)) {
                 api_respond(422, ['success' => false, 'message' => 'Choose a product or service listing.']);
@@ -100,6 +106,90 @@ try {
                 'success' => true,
                 'message' => 'Listing created.',
                 'id' => (int) $connection->lastInsertId(),
+            ]);
+        }
+
+        if ($action === 'purchase') {
+            if ($account['account_role'] !== 'investor') {
+                api_respond(403, ['success' => false, 'message' => 'Only investors can purchase marketplace listings.']);
+            }
+            $type = $data['type'] ?? null;
+            $id = filter_var($data['id'] ?? null, FILTER_VALIDATE_INT);
+            if (!is_string($type) || !in_array($type, ['product', 'service'], true) || !$id || $id < 1) {
+                api_respond(422, ['success' => false, 'message' => 'Choose a valid marketplace listing to purchase.']);
+            }
+
+            require_once __DIR__ . '/payfast_common.php';
+            $configuration = payfast_local_configuration();
+            if (!payfast_configuration_is_ready($configuration)) {
+                api_respond(503, [
+                    'success' => false,
+                    'message' => 'PayFast is not configured. Copy api/payfast_config.example.php to api/payfast_config.local.php and add your merchant settings.',
+                ]);
+            }
+
+            $table = $type === 'product' ? 'products' : 'services';
+            $connection->beginTransaction();
+            $listingStatement = $connection->prepare(
+                'SELECT owner_role, owner_id, title, price
+                 FROM ' . $table . ' WHERE id = :id FOR UPDATE'
+            );
+            $listingStatement->execute(['id' => $id]);
+            $listing = $listingStatement->fetch(PDO::FETCH_ASSOC);
+            if (!$listing) {
+                $connection->rollBack();
+                api_respond(404, ['success' => false, 'message' => 'Marketplace listing not found.']);
+            }
+            if ($listing['owner_role'] === $account['account_role']
+                && (int) $listing['owner_id'] === $account['account_id']) {
+                $connection->rollBack();
+                api_respond(403, ['success' => false, 'message' => 'You cannot purchase your own listing.']);
+            }
+            if ($listing['price'] === null || (float) $listing['price'] <= 0) {
+                $connection->rollBack();
+                api_respond(422, ['success' => false, 'message' => 'This listing does not have a purchasable price.']);
+            }
+
+            $buyerStatement = $connection->prepare(
+                'SELECT first_name, email FROM investors WHERE id = :id'
+            );
+            $buyerStatement->execute(['id' => $account['account_id']]);
+            $buyer = $buyerStatement->fetch(PDO::FETCH_ASSOC);
+            if (!$buyer) {
+                $connection->rollBack();
+                api_respond(404, ['success' => false, 'message' => 'Investor account not found.']);
+            }
+
+            $gatewayReference = 'MP-' . strtoupper(bin2hex(random_bytes(12)));
+            $checkoutToken = bin2hex(random_bytes(32));
+            $purchaseStatement = $connection->prepare(
+                'INSERT INTO marketplace_purchases
+                    (investor_id, listing_type, listing_id, listing_title,
+                     gateway_reference, amount, checkout_token_hash, checkout_expires_at)
+                 VALUES
+                    (:investor_id, :listing_type, :listing_id, :listing_title,
+                     :gateway_reference, :amount, :checkout_token_hash,
+                     DATE_ADD(UTC_TIMESTAMP(), INTERVAL 20 MINUTE))'
+            );
+            $purchaseStatement->execute([
+                'investor_id' => $account['account_id'],
+                'listing_type' => $type,
+                'listing_id' => $id,
+                'listing_title' => $listing['title'],
+                'gateway_reference' => $gatewayReference,
+                'amount' => $listing['price'],
+                'checkout_token_hash' => hash('sha256', $checkoutToken),
+            ]);
+            $connection->commit();
+
+            $checkoutUrl = rtrim($configuration['checkout_url'], '?')
+                . '?token=' . rawurlencode($checkoutToken);
+            api_respond(200, [
+                'success' => true,
+                'payment_status' => 'pending',
+                'checkout_url' => $checkoutUrl,
+                'amount' => number_format((float) $listing['price'], 2, '.', ''),
+                'currency' => 'ZAR',
             ]);
         }
 
@@ -342,5 +432,8 @@ try {
     header('Allow: GET, POST, OPTIONS');
     api_respond(405, ['success' => false, 'message' => 'Use GET or a supported POST action.']);
 } catch (PDOException $exception) {
+    if (isset($connection) && $connection instanceof PDO && $connection->inTransaction()) {
+        $connection->rollBack();
+    }
     api_handle_database_error($exception);
 }

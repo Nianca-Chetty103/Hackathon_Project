@@ -26,12 +26,14 @@ class TankPage extends StatefulWidget {
     required this.token,
     this.canPost = true,
     this.canChat = false,
+    this.showMyPosts = true,
     super.key,
   });
 
   final String token;
   final bool canPost;
   final bool canChat;
+  final bool showMyPosts;
 
   @override
   State<TankPage> createState() => _TankPageState();
@@ -177,15 +179,16 @@ class _TankPageState extends State<TankPage> {
 
   @override
   Widget build(BuildContext context) {
+    final tabCount = widget.showMyPosts ? 2 : 1;
     return DefaultTabController(
-      length: 2,
+      length: tabCount,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('The Tank'),
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Ideas'),
-              Tab(text: 'My Posts'),
+              const Tab(text: 'Ideas'),
+              if (widget.showMyPosts) const Tab(text: 'My Posts'),
             ],
           ),
         ),
@@ -216,12 +219,14 @@ class _TankPageState extends State<TankPage> {
                   ),
                 ),
               )
-            : TabBarView(
+            : widget.showMyPosts
+            ? TabBarView(
                 children: [
                   _ideasTab(onlyMine: false),
                   _ideasTab(onlyMine: true),
                 ],
-              ),
+              )
+            : _ideasTab(onlyMine: false),
       ),
     );
   }

@@ -38,6 +38,10 @@ try {
                 $post['author_role'],
                 $post['author_id']
             );
+            $post['can_edit'] = $post['author_role'] === $account['account_role']
+                && $post['author_id'] === $account['account_id'];
+            $post['can_delete'] = in_array($account['account_role'], ['admin', 'investor'], true)
+                && $post['can_edit'];
             $commentStatement->execute(['post_id' => $post['id']]);
             $post['comments'] = $commentStatement->fetchAll(PDO::FETCH_ASSOC);
             foreach ($post['comments'] as &$comment) {
@@ -70,8 +74,8 @@ try {
     $action = $data['action'] ?? '';
 
     if ($action === 'create') {
-        if (!in_array($account['account_role'], ['lecturer', 'admin'], true)) {
-            api_respond(403, ['success' => false, 'message' => 'Only lecturers and administrators can publish advice posts.']);
+        if (!in_array($account['account_role'], ['lecturer', 'admin', 'investor'], true)) {
+            api_respond(403, ['success' => false, 'message' => 'Only lecturers, administrators, and investors can publish advice posts.']);
         }
         $title = api_required_string($data, 'title', 200);
         $body = api_required_string($data, 'body', 8000);
@@ -90,6 +94,65 @@ try {
             'id' => (int) $connection->lastInsertId(),
             'message' => 'Advice post published.',
         ]);
+    }
+
+    if ($action === 'update') {
+        $postId = filter_var($data['post_id'] ?? null, FILTER_VALIDATE_INT);
+        if (!$postId || $postId < 1) {
+            api_respond(422, ['success' => false, 'message' => 'Choose a valid advice post.']);
+        }
+        $title = api_required_string($data, 'title', 200);
+        $body = api_required_string($data, 'body', 8000);
+        $statement = $connection->prepare(
+            'UPDATE entrepreneurial_posts
+             SET title = :title, body = :body
+             WHERE id = :id AND author_role = :author_role AND author_id = :author_id'
+        );
+        $statement->execute([
+            'title' => $title,
+            'body' => $body,
+            'id' => $postId,
+            'author_role' => $account['account_role'],
+            'author_id' => $account['account_id'],
+        ]);
+        if ($statement->rowCount() === 0) {
+            $exists = $connection->prepare(
+                'SELECT 1 FROM entrepreneurial_posts
+                 WHERE id = :id AND author_role = :author_role AND author_id = :author_id'
+            );
+            $exists->execute([
+                'id' => $postId,
+                'author_role' => $account['account_role'],
+                'author_id' => $account['account_id'],
+            ]);
+            if (!$exists->fetchColumn()) {
+                api_respond(404, ['success' => false, 'message' => 'Advice post not found or you cannot edit it.']);
+            }
+        }
+        api_respond(200, ['success' => true, 'message' => 'Advice post updated.']);
+    }
+
+    if ($action === 'delete') {
+        if (!in_array($account['account_role'], ['admin', 'investor'], true)) {
+            api_respond(403, ['success' => false, 'message' => 'Only administrators and investors can delete their own advice posts.']);
+        }
+        $postId = filter_var($data['post_id'] ?? null, FILTER_VALIDATE_INT);
+        if (!$postId || $postId < 1) {
+            api_respond(422, ['success' => false, 'message' => 'Choose a valid advice post.']);
+        }
+        $statement = $connection->prepare(
+            'DELETE FROM entrepreneurial_posts
+             WHERE id = :id AND author_role = :author_role AND author_id = :author_id'
+        );
+        $statement->execute([
+            'id' => $postId,
+            'author_role' => $account['account_role'],
+            'author_id' => $account['account_id'],
+        ]);
+        if ($statement->rowCount() === 0) {
+            api_respond(404, ['success' => false, 'message' => 'Advice post not found or you cannot delete it.']);
+        }
+        api_respond(200, ['success' => true, 'message' => 'Advice post deleted.']);
     }
 
     if ($action === 'comment') {

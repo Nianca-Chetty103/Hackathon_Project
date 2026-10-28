@@ -9,6 +9,7 @@ import 'tank.dart';
 import 'bursaries.dart';
 import 'blog.dart';
 import 'chats.dart';
+import 'auction_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -66,9 +67,9 @@ class _HomePageState extends State<HomePage> {
           role: _profile['role'] as String? ?? 'student',
         );
       case 3:
-        return BursariesPage(
+        return AuctionPage(
           token: widget.token,
-          canPost: _profile['role'] == 'admin',
+          role: _profile['role'] as String? ?? 'student',
         );
       default:
         throw RangeError.index(index, _tabs);
@@ -88,9 +89,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       body: IndexedStack(
         index: _selectedTab,
-        children: [
-          for (final tab in _tabs) tab ?? const SizedBox.shrink(),
-        ],
+        children: [for (final tab in _tabs) tab ?? const SizedBox.shrink()],
       ),
       bottomNavigationBar: NavigationBar(
         key: const ValueKey('home-bottom-navigation'),
@@ -116,10 +115,10 @@ class _HomePageState extends State<HomePage> {
             label: 'Chats',
           ),
           NavigationDestination(
-            key: ValueKey('bottom-nav-bursaries'),
-            icon: Icon(Icons.school_outlined),
-            selectedIcon: Icon(Icons.school_rounded),
-            label: 'Bursaries',
+            key: ValueKey('bottom-nav-auction'),
+            icon: Icon(Icons.gavel_outlined),
+            selectedIcon: Icon(Icons.gavel_rounded),
+            label: 'Auction',
           ),
         ],
       ),
@@ -174,7 +173,7 @@ class _HomePageState extends State<HomePage> {
                 _FeatureButton(
                   key: const ValueKey('marketplace-button'),
                   title: 'Marketplace',
-                  subtitle: 'Buy and sell products or promote your services.',
+                  subtitle: 'Browse products and services from the community.',
                   icon: Icons.storefront_rounded,
                   color: const Color(0xFF2563EB),
                   onTap: () => _openPage(
@@ -195,29 +194,51 @@ class _HomePageState extends State<HomePage> {
                       token: widget.token,
                       canPost: _profile['role'] == 'student',
                       canChat: _profile['role'] == 'investor',
+                      showMyPosts: _profile['role'] != 'investor',
                     ),
                   ),
                 ),
+                if (_profile['role'] != 'investor') ...[
+                  const SizedBox(height: 12),
+                  _FeatureButton(
+                    key: const ValueKey('communities-button'),
+                    title: 'Communities',
+                    subtitle:
+                        'Join Eduvos communities and follow their updates.',
+                    icon: Icons.groups_rounded,
+                    color: const Color(0xFF0284C7),
+                    onTap: () => _openPage(
+                      context,
+                      CommunitiesPage(token: widget.token),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _FeatureButton(
-                  key: const ValueKey('communities-button'),
-                  title: 'Communities',
-                  subtitle: 'Join Eduvos communities and follow their updates.',
-                  icon: Icons.groups_rounded,
-                  color: const Color(0xFF0284C7),
-                  onTap: () =>
-                      _openPage(context, CommunitiesPage(token: widget.token)),
-                ),
-                const SizedBox(height: 12),
-                _FeatureButton(
-                  key: const ValueKey('bursaries-button'),
-                  title: 'Bursaries',
-                  subtitle: 'Find funding opportunities and application links.',
-                  icon: Icons.school_outlined,
+                  key: const ValueKey('auction-button'),
+                  title: 'Auction',
+                  subtitle: 'Make and review offers on student business ideas.',
+                  icon: Icons.gavel_rounded,
                   color: const Color(0xFF3B82F6),
                   onTap: () => _selectTab(3),
                 ),
                 if (_profile['role'] != 'investor') ...[
+                  const SizedBox(height: 12),
+                  _FeatureButton(
+                    key: const ValueKey('bursaries-feature-button'),
+                    title: 'Bursaries',
+                    subtitle:
+                        'Find funding opportunities and application links.',
+                    icon: Icons.school_outlined,
+                    color: const Color(0xFF2563EB),
+                    onTap: () => _openPage(
+                      context,
+                      BursariesPage(
+                        token: widget.token,
+                        canPost: _profile['role'] == 'admin',
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   _FeatureButton(
                     key: const ValueKey('mylms-button'),

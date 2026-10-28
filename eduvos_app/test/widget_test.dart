@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eduvos_app/admin_dashboard.dart';
+import 'package:eduvos_app/auction_page.dart';
 import 'package:eduvos_app/bursaries.dart';
 import 'package:eduvos_app/blog.dart';
 import 'package:eduvos_app/chats.dart';
@@ -116,6 +117,24 @@ void main() {
         'is_mine': false,
         'can_delete': false,
         'can_chat': true,
+        'student_id': 9,
+        'student_name': 'Mia R.',
+        'interest_id': 11,
+        'chat_id': 7,
+        'fee_status': 'paid',
+        'my_offer': null,
+        'offer_count': 1,
+        'auction_closed': false,
+        'offers': [
+          {
+            'id': 12,
+            'investor_id': 5,
+            'investor_name': 'Sam Investor',
+            'amount': '5000.00',
+            'message': 'Ready to help develop this idea.',
+            'status': 'pending',
+          },
+        ],
       },
     ];
     _testCommunities = [
@@ -166,6 +185,7 @@ void main() {
         'author': 'Dr Mentor',
         'reaction_count': 2,
         'liked_by_me': false,
+        'can_edit': false,
         'comments': <Map<String, dynamic>>[],
       },
     ];
@@ -237,6 +257,14 @@ void main() {
                 : _testServices;
             listings.removeWhere((listing) => listing['id'] == data['id']);
             response = {'success': true};
+          } else if (operation == 'marketplace.purchase') {
+            response = {
+              'success': true,
+              'payment_status': 'pending',
+              'checkout_url': 'https://example.com/payfast-checkout',
+              'amount': '250.00',
+              'currency': 'ZAR',
+            };
           } else if (operation == 'marketplace.uploadImages') {
             _uploadedPhotoRequest = {'token': arguments['token'], ...data};
             response = {'success': true};
@@ -270,6 +298,38 @@ void main() {
             response = {'success': true, 'community_id': 5};
           } else if (operation == 'tank.list') {
             response = {'success': true, 'data': _testIdeas};
+          } else if (operation == 'auction.list') {
+            final ideas = arguments['token'] == 'investor-token'
+                ? _testIdeas
+                      .where((idea) => idea['interest_id'] is int)
+                      .toList()
+                : _testIdeas;
+            response = {'success': true, 'data': ideas};
+          } else if (operation == 'auction.offer') {
+            final idea = _testIdeas.firstWhere(
+              (item) => item['id'] == data['idea_id'],
+            );
+            idea['my_offer'] = {
+              'id': 13,
+              'amount': data['amount'],
+              'message': data['message'],
+              'status': 'pending',
+            };
+            idea['offer_count'] = (idea['offer_count'] as int? ?? 0) + 1;
+            response = {'success': true};
+          } else if (operation == 'auction.accept') {
+            final idea = _testIdeas.firstWhere(
+              (item) => (item['offers'] as List).any(
+                (offer) => offer['id'] == data['offer_id'],
+              ),
+            );
+            for (final offer in idea['offers'] as List) {
+              offer['status'] = offer['id'] == data['offer_id']
+                  ? 'accepted'
+                  : 'rejected';
+            }
+            idea['auction_closed'] = true;
+            response = {'success': true, 'chat_id': 7};
           } else if (operation == 'tank.create') {
             _testIdeas.insert(0, {
               ...data,
@@ -344,8 +404,23 @@ void main() {
               'author': 'Dr Mentor',
               'reaction_count': 0,
               'liked_by_me': false,
+              'can_edit': true,
+              'can_delete': [
+                'investor-token',
+                'admin-token',
+              ].contains(arguments['token']),
               'comments': <Map<String, dynamic>>[],
             });
+            response = {'success': true};
+          } else if (operation == 'blog.update') {
+            final post = _testBlogPosts.firstWhere(
+              (item) => item['id'] == data['post_id'],
+            );
+            post['title'] = data['title'];
+            post['body'] = data['body'];
+            response = {'success': true};
+          } else if (operation == 'blog.delete') {
+            _testBlogPosts.removeWhere((item) => item['id'] == data['post_id']);
             response = {'success': true};
           } else if (operation == 'blog.comment') {
             final post = _testBlogPosts.firstWhere(
@@ -603,9 +678,7 @@ void main() {
 
     expect(find.text('Create your account'), findsOneWidget);
     expect(
-      find.textContaining(
-        'Students and lecturers need their institution number',
-      ),
+      find.textContaining('Students need their student number'),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('role-field')), findsOneWidget);
@@ -636,16 +709,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('role-field')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Lecturer').last);
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const ValueKey('student-number-field')), findsNothing);
-    expect(find.byKey(const ValueKey('lecturer-number-field')), findsOneWidget);
-
-    await tester.ensureVisible(find.byKey(const ValueKey('role-field')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('role-field')));
-    await tester.pumpAndSettle();
+    expect(find.text('Student'), findsWidgets);
+    expect(find.text('Investor'), findsOneWidget);
+    expect(find.text('Lecturer'), findsNothing);
     expect(find.text('Admin'), findsNothing);
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
@@ -658,6 +724,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('login-role-field')));
     await tester.pumpAndSettle();
+    expect(find.text('Lecturer'), findsNothing);
     expect(find.text('Admin'), findsOneWidget);
   });
 
@@ -679,6 +746,10 @@ void main() {
     );
     expect(find.byKey(const ValueKey('student-number-field')), findsNothing);
     expect(find.byKey(const ValueKey('lecturer-number-field')), findsNothing);
+    await tester.ensureVisible(find.byKey(const ValueKey('role-field')));
+    await tester.tap(find.byKey(const ValueKey('role-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('Lecturer'), findsNothing);
   });
 
   testAndroidWidgets('home page shows the authenticated profile', (
@@ -749,9 +820,10 @@ void main() {
 
     expect(find.byKey(const ValueKey('mylms-button')), findsNothing);
     expect(find.byKey(const ValueKey('vossie-button')), findsNothing);
+    expect(find.byKey(const ValueKey('communities-button')), findsNothing);
   });
 
-  testAndroidWidgets('bottom navigation opens profile, chats, and bursaries', (
+  testAndroidWidgets('bottom navigation opens profile, chats, and auction', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -786,9 +858,10 @@ void main() {
       2,
     );
 
-    await tester.tap(find.byKey(const ValueKey('bottom-nav-bursaries')));
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-auction')));
     await tester.pumpAndSettle();
-    expect(find.text('Eduvos Future Leaders Bursary'), findsOneWidget);
+    expect(find.text('Auction'), findsWidgets);
+    expect(find.text('Offers on your ideas'), findsOneWidget);
   });
 
   testAndroidWidgets('profile edits details and persists settings', (
@@ -871,6 +944,11 @@ void main() {
         300,
         scrollable: _marketplaceScrollable(),
       );
+      await tester.scrollUntilVisible(
+        find.text('Maths tutoring'),
+        300,
+        scrollable: _marketplaceScrollable(),
+      );
       expect(find.text('Maths tutoring'), findsOneWidget);
       expect(find.text('PRODUCT'), findsOneWidget);
       expect(find.text('SERVICE'), findsOneWidget);
@@ -946,6 +1024,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Handmade beaded bracelets'), findsOneWidget);
+    expect(find.text('R 250'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('marketplace-services-filter')));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -1005,6 +1084,84 @@ void main() {
     );
     expect(find.text('Maths tutoring'), findsOneWidget);
   });
+
+  testAndroidWidgets(
+    'my marketplace listings show only their uploaded images',
+    (WidgetTester tester) async {
+      _testProducts = [
+        {
+          'id': 8,
+          'title': 'My listing',
+          'description': 'Posted by me.',
+          'seller': 'Alex Student',
+          'price': 250,
+          'is_mine': true,
+          'can_chat': false,
+          'can_edit': true,
+          'can_delete': true,
+          'images': [
+            {'id': 99},
+          ],
+        },
+        {
+          'id': 9,
+          'title': 'Another listing',
+          'description': 'Posted by someone else.',
+          'seller': 'Taylor',
+          'price': null,
+          'is_mine': false,
+          'can_chat': true,
+          'can_edit': false,
+          'can_delete': false,
+          'images': [
+            {'id': 100},
+          ],
+        },
+      ];
+      _testServices = [];
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: MarketplacePage(
+            profile: {'role': 'student'},
+            token: 'marketplace-token',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('My Listings'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('My listing'), findsOneWidget);
+      expect(find.text('Another listing'), findsNothing);
+      expect(find.text('R 250'), findsOneWidget);
+      expect(find.byType(Image), findsOneWidget);
+    },
+  );
+
+  testAndroidWidgets(
+    'investors can browse but cannot post marketplace listings',
+    (WidgetTester tester) async {
+      _testProducts = [
+        {..._testProducts.first, 'price': 250, 'can_purchase': true},
+      ];
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: MarketplacePage(
+            profile: {'role': 'investor'},
+            token: 'investor-marketplace-token',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Handmade beaded bracelets'), findsOneWidget);
+      expect(find.byKey(const ValueKey('create-listing-button')), findsNothing);
+      expect(find.text('My Listings'), findsNothing);
+      expect(find.text('Message seller'), findsOneWidget);
+      expect(find.byKey(const ValueKey('purchase-listing-1')), findsOneWidget);
+    },
+  );
 
   testAndroidWidgets('marketplace listing opens a seller conversation', (
     WidgetTester tester,
@@ -1087,7 +1244,7 @@ void main() {
     ]);
   });
 
-  testAndroidWidgets('home page opens the bursaries list', (
+  testAndroidWidgets('students can still open the bursaries list from home', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -1105,11 +1262,53 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byKey(const ValueKey('bottom-nav-bursaries')));
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('bursaries-feature-button')),
+      300,
+      scrollable: _homeDashboardScrollable(),
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('bursaries-feature-button')),
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('home-dashboard-list')),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('bursaries-feature-button')));
     await tester.pumpAndSettle();
     expect(find.text('Bursaries'), findsWidgets);
     expect(find.text('Eduvos Future Leaders Bursary'), findsOneWidget);
     expect(find.byKey(const ValueKey('post-bursary-button')), findsNothing);
+  });
+
+  testAndroidWidgets('investors cannot open bursaries from home', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomePage(
+          profile: const {
+            'first_name': 'Sam',
+            'surname': 'Investor',
+            'role': 'investor',
+          },
+          token: 'investor-home-token',
+          onSignOut: () {},
+          onDarkModeChanged: (_) {},
+        ),
+      ),
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('entrepreneurial-blog-button')),
+      300,
+      scrollable: _homeDashboardScrollable(),
+    );
+    expect(
+      find.byKey(const ValueKey('bursaries-feature-button')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('bottom-nav-auction')), findsOneWidget);
   });
 
   testAndroidWidgets('admins can post a bursary with an application link', (
@@ -1204,6 +1403,203 @@ void main() {
     );
   });
 
+  testAndroidWidgets('investors can publish and edit their advice posts', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: BlogPage(token: 'investor-token', role: 'investor'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('edit-advice-post-1')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('create-advice-post-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('advice-title-field')),
+      'Pricing for early-stage ideas',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('advice-body-field')),
+      'Test a small price with your first customers.',
+    );
+    await tester.tap(find.text('Publish'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pricing for early-stage ideas'), findsOneWidget);
+    final ownPostId = _testBlogPosts.first['id'];
+    expect(find.byKey(ValueKey('edit-advice-post-$ownPostId')), findsOneWidget);
+    expect(find.byKey(const ValueKey('edit-advice-post-1')), findsNothing);
+
+    await tester.tap(find.byTooltip('Edit advice post').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('advice-title-field')),
+      'Updated pricing advice',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('advice-body-field')),
+      'Ask customers what they would pay before scaling.',
+    );
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Updated pricing advice'), findsOneWidget);
+    expect(
+      find.text('Ask customers what they would pay before scaling.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('delete-advice-post-$ownPostId')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(ValueKey('delete-advice-post-$ownPostId')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('confirm-delete-advice-post')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Updated pricing advice'), findsNothing);
+  });
+
+  testAndroidWidgets('admins can edit and delete only their advice posts', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: BlogPage(token: 'admin-token', role: 'admin'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('create-advice-post-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('advice-title-field')),
+      'Admin marketplace guidance',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('advice-body-field')),
+      'Check demand before expanding.',
+    );
+    await tester.tap(find.text('Publish'));
+    await tester.pumpAndSettle();
+
+    final ownPostId = _testBlogPosts.first['id'];
+    expect(find.byKey(ValueKey('edit-advice-post-$ownPostId')), findsOneWidget);
+    expect(
+      find.byKey(ValueKey('delete-advice-post-$ownPostId')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('edit-advice-post-1')), findsNothing);
+    expect(find.byKey(const ValueKey('delete-advice-post-1')), findsNothing);
+
+    await tester.tap(find.byKey(ValueKey('edit-advice-post-$ownPostId')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('advice-title-field')),
+      'Updated admin guidance',
+    );
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Updated admin guidance'), findsOneWidget);
+
+    await tester.tap(find.byKey(ValueKey('delete-advice-post-$ownPostId')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('confirm-delete-advice-post')));
+    await tester.pumpAndSettle();
+    expect(find.text('Updated admin guidance'), findsNothing);
+  });
+
+  testAndroidWidgets('investors can submit offers after the fee is paid', (
+    WidgetTester tester,
+  ) async {
+    _testIdeas.add({
+      ..._testIdeas.first,
+      'id': 2,
+      'title': 'Not signed up idea',
+      'interest_id': null,
+      'chat_id': null,
+      'fee_status': 'not_started',
+      'my_offer': null,
+    });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AuctionPage(token: 'investor-token', role: 'investor'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Refill station map'), findsOneWidget);
+    expect(find.text('Not signed up idea'), findsNothing);
+    expect(find.text('Offers received: 1'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('make-auction-offer-1')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('auction-offer-amount-field')),
+      '7500',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('auction-offer-message-field')),
+      'I can help with the first prototype.',
+    );
+    await tester.tap(find.text('Send offer'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your offer: R7500 · pending'), findsOneWidget);
+    expect(find.text('Offers received: 2'), findsOneWidget);
+  });
+
+  testAndroidWidgets(
+    'investors see closed auctions and cannot make another offer',
+    (WidgetTester tester) async {
+      _testIdeas.first['offer_count'] = 2;
+      _testIdeas.first['auction_closed'] = true;
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AuctionPage(token: 'investor-token', role: 'investor'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Offers received: 2'), findsOneWidget);
+      expect(find.text('Auction closed'), findsOneWidget);
+      expect(find.byKey(const ValueKey('make-auction-offer-1')), findsNothing);
+      expect(find.byKey(const ValueKey('pay-auction-fee-1')), findsNothing);
+    },
+  );
+
+  testAndroidWidgets('students can accept an offer into a private chat', (
+    WidgetTester tester,
+  ) async {
+    _testIdeas.first['offers'].add({
+      'id': 14,
+      'investor_id': 6,
+      'investor_name': 'Taylor Investor',
+      'amount': '8000.00',
+      'message': 'I can fund the pilot launch.',
+      'status': 'pending',
+    });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AuctionPage(token: 'student-token', role: 'student'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2 investor offers'), findsOneWidget);
+    expect(find.text('Sam Investor'), findsOneWidget);
+    expect(find.text('Taylor Investor'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('select-auction-offer-14')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('select-auction-offer-14')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('accept-auction-offer-14')));
+    await tester.pumpAndSettle();
+
+    expect(_testIdeas.first['offers'][1]['status'], 'accepted');
+    expect(find.text('Taylor Investor'), findsOneWidget);
+    expect(find.byType(PrivateChatPage), findsOneWidget);
+  });
+
   testAndroidWidgets(
     'investors can express interest and notify the student in chat',
     (WidgetTester tester) async {
@@ -1290,6 +1686,25 @@ void main() {
     expect(find.textContaining('Shared by Alex'), findsOneWidget);
     expect(_testIdeas.first['industry'], 'Technology');
     expect(_testIdeas.first['deadline'], isNotEmpty);
+  });
+
+  testAndroidWidgets('investors do not see My Posts in The Tank', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: TankPage(
+          token: 'investor-token',
+          canPost: false,
+          canChat: true,
+          showMyPosts: false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('My Posts'), findsNothing);
+    expect(find.text('Refill station map'), findsOneWidget);
   });
 
   testAndroidWidgets('students can join a community and see its updates', (
@@ -1401,11 +1816,47 @@ void main() {
     expect(find.text('Welcome, Alex Admin'), findsOneWidget);
     expect(find.text('admin@example.com'), findsOneWidget);
     expect(find.text('Administrator account'), findsOneWidget);
-    expect(find.byKey(const ValueKey('admin-chats-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('admin-chats-button')), findsNothing);
     expect(
       find.byKey(const ValueKey('admin-idea-fees-button')),
       findsOneWidget,
     );
+  });
+
+  testAndroidWidgets('admin moderation pages omit personal listing tabs', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AdminDashboardPage(
+          profile: const {
+            'first_name': 'Alex Admin',
+            'email': 'admin@example.com',
+            'role': 'admin',
+          },
+          token: 'admin-token',
+          onSignOut: () {},
+          onDarkModeChanged: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final marketplaceButton = find.text('Moderate Marketplace');
+    await tester.ensureVisible(marketplaceButton);
+    await tester.tap(marketplaceButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Marketplace'), findsWidgets);
+    expect(find.text('My Listings'), findsNothing);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    final tankButton = find.text('Moderate The Tank');
+    await tester.ensureVisible(tankButton);
+    await tester.tap(tankButton);
+    await tester.pumpAndSettle();
+    expect(find.text('The Tank'), findsOneWidget);
+    expect(find.text('My Posts'), findsNothing);
   });
 
   testAndroidWidgets('admins can manually verify a pending idea fee', (

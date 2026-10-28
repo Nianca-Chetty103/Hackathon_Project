@@ -21,8 +21,8 @@ final class Blog {
         if ("list".equals(operation)) {
             return AuthApiClient.request(endpoint, "GET", headers, null);
         }
-        if (!"create".equals(operation) && !"comment".equals(operation)
-                && !"react".equals(operation)) {
+        if (!"create".equals(operation) && !"update".equals(operation)
+                && !"comment".equals(operation) && !"react".equals(operation)) {
             throw new IllegalArgumentException("Unknown blog operation.");
         }
 

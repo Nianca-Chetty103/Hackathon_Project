@@ -2,7 +2,7 @@
 
 function payfast_local_configuration(): ?array
 {
-    $path = __DIR__ . '/payfast_config.local.php';
+    $path = __DIR__ . '/payfast_config.example.php';
     if (!is_file($path)) {
         return null;
     }

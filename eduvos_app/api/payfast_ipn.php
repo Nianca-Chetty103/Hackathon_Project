@@ -83,9 +83,13 @@ if (!isset($fields['amount_gross'], $fields['pf_payment_id'])
 try {
     $connection = get_database_connection();
     $connection->beginTransaction();
+    $marketplacePurchase = substr($fields['m_payment_id'], 0, 3) === 'MP-';
+    $paymentTable = $marketplacePurchase
+        ? 'marketplace_purchases'
+        : 'idea_interest_payments';
     $paymentStatement = $connection->prepare(
         'SELECT id, amount, payment_status
-         FROM idea_interest_payments
+         FROM ' . $paymentTable . '
          WHERE gateway_reference = :gateway_reference
          FOR UPDATE'
     );
@@ -103,14 +107,19 @@ try {
     }
 
     if ($payment['payment_status'] !== 'paid') {
-        $update = $connection->prepare(
-            'UPDATE idea_interest_payments
-             SET payment_status = \'paid\', verification_source = \'payfast\',
-                 verified_by_admin_id = NULL, payfast_payment_id = :payfast_payment_id,
-                 paid_at = UTC_TIMESTAMP(), checkout_token_hash = NULL,
-                 checkout_expires_at = NULL
-             WHERE id = :id AND payment_status != \'paid\''
-        );
+        $updateSql = $marketplacePurchase
+            ? 'UPDATE marketplace_purchases
+               SET payment_status = \'paid\', payfast_payment_id = :payfast_payment_id,
+                   paid_at = UTC_TIMESTAMP(), checkout_token_hash = NULL,
+                   checkout_expires_at = NULL
+               WHERE id = :id AND payment_status != \'paid\''
+            : 'UPDATE idea_interest_payments
+               SET payment_status = \'paid\', verification_source = \'payfast\',
+                   verified_by_admin_id = NULL, payfast_payment_id = :payfast_payment_id,
+                   paid_at = UTC_TIMESTAMP(), checkout_token_hash = NULL,
+                   checkout_expires_at = NULL
+               WHERE id = :id AND payment_status != \'paid\'';
+        $update = $connection->prepare($updateSql);
         $update->execute([
             'payfast_payment_id' => (string) $fields['pf_payment_id'],
             'id' => $payment['id'],

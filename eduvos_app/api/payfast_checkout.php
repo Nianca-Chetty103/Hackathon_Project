@@ -28,32 +28,53 @@ if (!payfast_configuration_is_ready($configuration)) {
 try {
     $connection = get_database_connection();
     $connection->beginTransaction();
-    $statement = $connection->prepare(
+    $tokenHash = hash('sha256', $token);
+    $marketplaceStatement = $connection->prepare(
         'SELECT p.gateway_reference, p.amount, p.payment_status,
-                i.idea_id, inv.first_name, inv.email
-         FROM idea_interest_payments p
-         INNER JOIN idea_interests i ON i.id = p.interest_id
-         INNER JOIN investors inv ON inv.id = i.investor_id
+                p.listing_type, p.listing_id, p.listing_title,
+                inv.first_name, inv.email
+         FROM marketplace_purchases p
+         INNER JOIN investors inv ON inv.id = p.investor_id
          WHERE p.checkout_token_hash = :token_hash
            AND p.checkout_expires_at > UTC_TIMESTAMP()
          LIMIT 1
          FOR UPDATE'
     );
-    $statement->execute(['token_hash' => hash('sha256', $token)]);
-    $payment = $statement->fetch(PDO::FETCH_ASSOC);
+    $marketplaceStatement->execute(['token_hash' => $tokenHash]);
+    $payment = $marketplaceStatement->fetch(PDO::FETCH_ASSOC);
+    $paymentType = 'marketplace';
+    if (!$payment) {
+        $ideaStatement = $connection->prepare(
+            'SELECT p.gateway_reference, p.amount, p.payment_status,
+                    i.idea_id, inv.first_name, inv.email
+             FROM idea_interest_payments p
+             INNER JOIN idea_interests i ON i.id = p.interest_id
+             INNER JOIN investors inv ON inv.id = i.investor_id
+             WHERE p.checkout_token_hash = :token_hash
+               AND p.checkout_expires_at > UTC_TIMESTAMP()
+             LIMIT 1
+             FOR UPDATE'
+        );
+        $ideaStatement->execute(['token_hash' => $tokenHash]);
+        $payment = $ideaStatement->fetch(PDO::FETCH_ASSOC);
+        $paymentType = 'idea_fee';
+    }
     if (!$payment || $payment['payment_status'] !== 'pending') {
         $connection->rollBack();
         checkout_error(410, 'This payment link has expired or has already been used. Return to Eduvos to refresh it.');
     }
+    $paymentTable = $paymentType === 'marketplace'
+        ? 'marketplace_purchases'
+        : 'idea_interest_payments';
     $consumeToken = $connection->prepare(
-        'UPDATE idea_interest_payments
+        'UPDATE ' . $paymentTable . '
          SET checkout_token_hash = NULL, checkout_expires_at = NULL
          WHERE gateway_reference = :gateway_reference
            AND checkout_token_hash = :token_hash'
     );
     $consumeToken->execute([
         'gateway_reference' => $payment['gateway_reference'],
-        'token_hash' => hash('sha256', $token),
+        'token_hash' => $tokenHash,
     ]);
     if ($consumeToken->rowCount() !== 1) {
         $connection->rollBack();
@@ -71,23 +92,32 @@ try {
         'email_address' => $payment['email'],
         'm_payment_id' => $payment['gateway_reference'],
         'amount' => number_format((float) $payment['amount'], 2, '.', ''),
-        'item_name' => 'Eduvos investor idea admin fee',
-        'item_description' => 'Admin fee for expressing interest in business idea ' . $payment['idea_id'],
     ];
+    if ($paymentType === 'marketplace') {
+        $fields['item_name'] = $payment['listing_title'];
+        $fields['item_description'] = ucfirst($payment['listing_type'])
+            . ' purchase from the Eduvos marketplace (listing '
+            . $payment['listing_id'] . ')';
+    } else {
+        $fields['item_name'] = 'Eduvos investor idea admin fee';
+        $fields['item_description'] = 'Admin fee for expressing interest in business idea ' . $payment['idea_id'];
+    }
     $fields['signature'] = payfast_signature($fields, $configuration['passphrase']);
     $processUrl = payfast_process_url($configuration);
     $allowedFormAction = htmlspecialchars($processUrl, ENT_QUOTES, 'UTF-8');
 
     header(
         "Content-Security-Policy: default-src 'none'; form-action "
-        . ($configuration['sandbox'] ? 'https://sandbox.payfast.co.za' : 'https://www.payfast.co.za')
+        . ($configuration['sandbox'] ? 'https://sandbox.payfast.co.za/eng/process' : 'https://www.payfast.co.za')
         . "; script-src 'unsafe-inline'; style-src 'unsafe-inline'"
     );
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         . '<meta name="viewport" content="width=device-width, initial-scale=1">'
         . '<title>Continue to PayFast</title>'
         . '<style>body{font:16px sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem}button{padding:.8rem 1.2rem}</style>'
-        . '</head><body><h1>Continue to PayFast</h1><p>You are paying R200.00 (ZAR) to Eduvos.</p>'
+        . '</head><body><h1>Continue to PayFast</h1><p>You are paying R'
+        . htmlspecialchars(number_format((float) $payment['amount'], 2, '.', ''), ENT_QUOTES, 'UTF-8')
+        . ' (ZAR) to Eduvos.</p>'
         . '<form id="payfast" method="post" action="' . $allowedFormAction . '">';
     foreach ($fields as $name => $value) {
         echo '<input type="hidden" name="' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8')

@@ -164,9 +164,6 @@ class _AuthPageState extends State<AuthPage> {
               studentNumber: _role == 'student'
                   ? _institutionNumberController.text.trim()
                   : null,
-              lecturerNumber: _role == 'lecturer'
-                  ? _institutionNumberController.text.trim()
-                  : null,
               companyName: _role == 'investor'
                   ? _companyNameController.text.trim()
                   : null,
@@ -439,14 +436,14 @@ class _AuthPageState extends State<AuthPage> {
           const SizedBox(height: 7),
           Text(
             _isSignUp
-                ? 'Create a student, lecturer, or investor account.'
+                ? 'Create a student or investor account.'
                 : 'Sign in to continue to your student portal.',
             style: const TextStyle(color: _muted, fontSize: 14, height: 1.45),
           ),
           if (_isSignUp) ...[
             const SizedBox(height: 8),
             const Text(
-              'Students and lecturers need their institution number. Investor company name is optional.',
+              'Students need their student number. Investor company name is optional.',
               style: TextStyle(color: _muted, fontSize: 12, height: 1.4),
             ),
           ],
@@ -515,26 +512,18 @@ class _AuthPageState extends State<AuthPage> {
                     },
                   ),
                   const SizedBox(height: 16),
-                  if (_role != 'investor') ...[
+                  if (_role == 'student') ...[
                     TextFormField(
-                      key: ValueKey(
-                        _role == 'student'
-                            ? 'student-number-field'
-                            : 'lecturer-number-field',
-                      ),
+                      key: const ValueKey('student-number-field'),
                       controller: _institutionNumberController,
                       textInputAction: TextInputAction.next,
                       decoration: _inputDecoration(
-                        label: _role == 'student'
-                            ? 'Student number'
-                            : 'Lecturer number',
+                        label: 'Student number',
                         icon: Icons.numbers_rounded,
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return _role == 'student'
-                              ? 'Enter your student number'
-                              : 'Enter your lecturer number';
+                          return 'Enter your student number';
                         }
                         return null;
                       },
@@ -708,7 +697,6 @@ class _AuthPageState extends State<AuthPage> {
       decoration: _inputDecoration(label: 'Role', icon: Icons.badge_outlined),
       items: [
         const DropdownMenuItem(value: 'student', child: Text('Student')),
-        const DropdownMenuItem(value: 'lecturer', child: Text('Lecturer')),
         const DropdownMenuItem(value: 'investor', child: Text('Investor')),
         if (!_isSignUp)
           const DropdownMenuItem(value: 'admin', child: Text('Admin')),

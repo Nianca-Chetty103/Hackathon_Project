@@ -51,7 +51,7 @@ try {
     $connection->exec(
         "CREATE TABLE IF NOT EXISTS entrepreneurial_posts (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            author_role ENUM('lecturer', 'admin') NOT NULL,
+            author_role ENUM('lecturer', 'admin', 'investor') NOT NULL,
             author_id BIGINT UNSIGNED NOT NULL,
             title VARCHAR(200) NOT NULL,
             body TEXT NOT NULL,

@@ -114,6 +114,10 @@ public class MainActivity extends FlutterActivity {
                     response = Tank.handle(
                             operation.substring("tank.".length()), endpoint, token, data
                     );
+                } else if (operation.startsWith("auction.")) {
+                    response = Auction.handle(
+                            operation.substring("auction.".length()), endpoint, token, data
+                    );
                 } else if (operation.startsWith("bursaries.")) {
                     response = Bursaries.handle(
                             operation.substring("bursaries.".length()), endpoint, token, data

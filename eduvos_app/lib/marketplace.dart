@@ -1,7 +1,7 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'chats.dart';
 import 'feature_api.dart';
@@ -24,10 +24,12 @@ class _MarketplacePageState extends State<MarketplacePage> {
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _services = [];
   final _searchController = TextEditingController();
+  final Set<String> _purchasingListings = {};
   String? _selectedCategory;
   bool _isLoading = true;
   String? _error;
   bool get _canCreate => widget.profile['role'] == 'student';
+  bool get _canPurchase => widget.profile['role'] == 'investor';
 
   @override
   void initState() {
@@ -242,6 +244,41 @@ class _MarketplacePageState extends State<MarketplacePage> {
     }
   }
 
+  Future<void> _purchaseListing(
+    Map<String, dynamic> listing,
+    String type,
+  ) async {
+    final id = listing['id'];
+    if (!_canPurchase || id is! int) return;
+    final key = '$type-$id';
+    if (!_purchasingListings.add(key)) return;
+    setState(() {});
+    try {
+      final checkoutUrl = await FeatureApi.marketplacePurchaseCheckout(
+        token: widget.token,
+        listingType: type,
+        listingId: id,
+      );
+      final uri = Uri.tryParse(checkoutUrl);
+      if (uri == null || !{'http', 'https'}.contains(uri.scheme)) {
+        throw const FeatureApiException(
+          'The server returned an invalid PayFast checkout link.',
+        );
+      }
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        _showError('Could not open the PayFast payment page.');
+      }
+    } on FeatureApiException catch (error) {
+      if (mounted) _showError(error.message);
+    } on PlatformException {
+      if (mounted) _showError('Could not open the PayFast payment page.');
+    } finally {
+      _purchasingListings.remove(key);
+      if (mounted) setState(() {});
+    }
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -250,15 +287,16 @@ class _MarketplacePageState extends State<MarketplacePage> {
 
   @override
   Widget build(BuildContext context) {
+    final showMyListings = widget.profile['role'] != 'admin' && !_canPurchase;
     return DefaultTabController(
-      length: 2,
+      length: showMyListings ? 2 : 1,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Marketplace'),
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Marketplace'),
-              Tab(text: 'My Listings'),
+              const Tab(text: 'Marketplace'),
+              if (showMyListings) const Tab(text: 'My Listings'),
             ],
           ),
         ),
@@ -289,12 +327,14 @@ class _MarketplacePageState extends State<MarketplacePage> {
                   ),
                 ),
               )
-            : TabBarView(
+            : showMyListings
+            ? TabBarView(
                 children: [
                   _listingTab(onlyMine: false),
                   _listingTab(onlyMine: true),
                 ],
-              ),
+              )
+            : _listingTab(onlyMine: false),
       ),
     );
   }
@@ -413,6 +453,9 @@ class _MarketplacePageState extends State<MarketplacePage> {
           onEdit: _editListing,
           onDelete: _deleteListing,
           onChat: _chatAboutListing,
+          canPurchase: _canPurchase,
+          purchasingListings: _purchasingListings,
+          onPurchase: _purchaseListing,
         ),
         _ListingSection(
           title: 'Services',
@@ -422,6 +465,9 @@ class _MarketplacePageState extends State<MarketplacePage> {
           onEdit: _editListing,
           onDelete: _deleteListing,
           onChat: _chatAboutListing,
+          canPurchase: _canPurchase,
+          purchasingListings: _purchasingListings,
+          onPurchase: _purchaseListing,
         ),
         if (products.isEmpty && services.isEmpty)
           Padding(
@@ -495,6 +541,14 @@ class _MarketplaceCategoryPill extends StatelessWidget {
   }
 }
 
+String _formatMarketplacePrice(Object price) {
+  final amount = price.toString().replaceFirst(
+    RegExp(r'^R\s*', caseSensitive: false),
+    '',
+  );
+  return 'R $amount';
+}
+
 class _ListingSection extends StatelessWidget {
   const _ListingSection({
     required this.title,
@@ -504,6 +558,9 @@ class _ListingSection extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onChat,
+    required this.canPurchase,
+    required this.purchasingListings,
+    required this.onPurchase,
   });
 
   final String title;
@@ -513,6 +570,9 @@ class _ListingSection extends StatelessWidget {
   final Future<void> Function(Map<String, dynamic>, String) onEdit;
   final Future<void> Function(Map<String, dynamic>, String) onDelete;
   final Future<void> Function(Map<String, dynamic>, String) onChat;
+  final bool canPurchase;
+  final Set<String> purchasingListings;
+  final Future<void> Function(Map<String, dynamic>, String) onPurchase;
 
   @override
   Widget build(BuildContext context) {
@@ -535,27 +595,15 @@ class _ListingSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  children: [
-                    _ListingImageCard(
-                      images: listing['images'] is List
-                          ? (listing['images'] as List)
-                                .whereType<Map>()
-                                .map(Map<String, dynamic>.from)
-                                .toList()
-                          : const [],
-                      type: type,
-                    ),
-                    if (listing['images'] is List)
-                      _ListingImageGallery(
-                        images: (listing['images'] as List)
+                _ListingImageCard(
+                  images: listing['images'] is List
+                      ? (listing['images'] as List)
                             .whereType<Map>()
                             .map(Map<String, dynamic>.from)
-                            .toList(),
-                        token: token,
-                        type: type,
-                      ),
-                  ],
+                            .toList()
+                      : const [],
+                  type: type,
+                  token: token,
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
@@ -585,7 +633,7 @@ class _ListingSection extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
-                                '${listing['price']}',
+                                _formatMarketplacePrice(listing['price']),
                                 style: TextStyle(
                                   color: Theme.of(context)
                                       .colorScheme
@@ -648,6 +696,36 @@ class _ListingSection extends StatelessWidget {
                             onPressed: () => onChat(listing, type),
                             icon: const Icon(Icons.chat_bubble_outline_rounded),
                             label: const Text('Message seller'),
+                          ),
+                        ),
+                      if (canPurchase && listing['can_purchase'] == true)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              key: ValueKey(
+                                'purchase-listing-${listing['id']}',
+                              ),
+                              onPressed:
+                                  purchasingListings.contains(
+                                    '$type-${listing['id']}',
+                                  )
+                                  ? null
+                                  : () => onPurchase(listing, type),
+                              icon:
+                                  purchasingListings.contains(
+                                    '$type-${listing['id']}',
+                                  )
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.shopping_cart_outlined),
+                              label: const Text('Purchase'),
+                            ),
                           ),
                         ),
                     ],
@@ -953,10 +1031,15 @@ class _PickedProductImage {
 }
 
 class _ListingImageCard extends StatelessWidget {
-  const _ListingImageCard({required this.images, required this.type});
+  const _ListingImageCard({
+    required this.images,
+    required this.type,
+    required this.token,
+  });
 
   final List<Map<String, dynamic>> images;
   final String type;
+  final String token;
 
   @override
   Widget build(BuildContext context) {
@@ -1001,7 +1084,7 @@ class _ListingImageCard extends StatelessWidget {
                 return Image.network(
                   FeatureApi.listingImageUrl(id, type: type).toString(),
                   fit: BoxFit.cover,
-                  headers: {'Authorization': '******'},
+                  headers: {'Authorization': 'Bearer $token'},
                   errorBuilder: (_, _, _) => ColoredBox(
                     color: colors.surfaceContainerHighest,
                     child: const Center(
@@ -1053,54 +1136,6 @@ class _ListingImageCard extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _ListingImageGallery extends StatelessWidget {
-  const _ListingImageGallery({
-    required this.images,
-    required this.token,
-    required this.type,
-  });
-
-  final List<Map<String, dynamic>> images;
-  final String token;
-  final String type;
-
-  @override
-  Widget build(BuildContext context) {
-    if (images.isEmpty) return const SizedBox.shrink();
-    return SizedBox(
-      height: 132,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        scrollDirection: Axis.horizontal,
-        itemCount: images.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final id = images[index]['id'];
-          if (id is! int) return const SizedBox.shrink();
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              FeatureApi.listingImageUrl(id, type: type).toString(),
-              width: 150,
-              height: 120,
-              fit: BoxFit.cover,
-              headers: {'Authorization': 'Bearer $token'},
-              errorBuilder: (_, _, _) => const SizedBox(
-                width: 150,
-                height: 120,
-                child: ColoredBox(
-                  color: Color(0xFFE8EEF2),
-                  child: Icon(Icons.broken_image_outlined),
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }

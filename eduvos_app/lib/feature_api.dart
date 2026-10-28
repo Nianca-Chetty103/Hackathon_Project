@@ -25,6 +25,24 @@ class FeatureApi {
     return _request('marketplace', 'list', token);
   }
 
+  static Future<String> marketplacePurchaseCheckout({
+    required String token,
+    required String listingType,
+    required int listingId,
+  }) async {
+    final response = await _request('marketplace', 'purchase', token, {
+      'type': listingType,
+      'id': listingId,
+    });
+    final checkoutUrl = response['checkout_url'];
+    if (checkoutUrl is! String || checkoutUrl.isEmpty) {
+      throw const FeatureApiException(
+        'The server did not return a PayFast checkout link.',
+      );
+    }
+    return checkoutUrl;
+  }
+
   static Future<int> createMarketplaceListing({
     required String token,
     required String type,
@@ -255,6 +273,46 @@ class FeatureApi {
     return data;
   }
 
+  static Future<List<dynamic>> auctionIdeas(String token) async {
+    final response = await _request('auction', 'list', token);
+    final data = response['data'];
+    if (data is! List) {
+      throw const FeatureApiException(
+        'The server returned invalid auction ideas.',
+      );
+    }
+    return data;
+  }
+
+  static Future<void> submitAuctionOffer({
+    required String token,
+    required int ideaId,
+    required String amount,
+    required String message,
+  }) async {
+    await _request('auction', 'offer', token, {
+      'idea_id': ideaId,
+      'amount': amount,
+      'message': message,
+    });
+  }
+
+  static Future<int> acceptAuctionOffer({
+    required String token,
+    required int offerId,
+  }) async {
+    final response = await _request('auction', 'accept', token, {
+      'offer_id': offerId,
+    });
+    final chatId = response['chat_id'];
+    if (chatId is! int || chatId < 1) {
+      throw const FeatureApiException(
+        'The server did not return the accepted offer chat.',
+      );
+    }
+    return chatId;
+  }
+
   static Future<void> createIdea({
     required String token,
     required String title,
@@ -358,6 +416,26 @@ class FeatureApi {
     required String body,
   }) async {
     await _request('blog', 'create', token, {'title': title, 'body': body});
+  }
+
+  static Future<void> updateBlogPost({
+    required String token,
+    required int postId,
+    required String title,
+    required String body,
+  }) async {
+    await _request('blog', 'update', token, {
+      'post_id': postId,
+      'title': title,
+      'body': body,
+    });
+  }
+
+  static Future<void> deleteBlogPost({
+    required String token,
+    required int postId,
+  }) async {
+    await _request('blog', 'delete', token, {'post_id': postId});
   }
 
   static Future<void> commentOnBlogPost({
@@ -544,6 +622,7 @@ class FeatureApi {
     final authUri = Uri.parse(_authApiUrl);
     final fileName = switch (feature) {
       'marketplace' => 'marketplace.php',
+      'auction' => 'auction.php',
       'community' => 'communities.php',
       'tank' => 'ideas.php',
       'bursaries' => 'bursaries.php',

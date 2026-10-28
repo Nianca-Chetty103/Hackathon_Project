@@ -129,6 +129,32 @@ CREATE TABLE IF NOT EXISTS service_images (
     FOREIGN KEY (service_id) REFERENCES services (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS marketplace_purchases (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  investor_id BIGINT UNSIGNED NOT NULL,
+  listing_type ENUM('product', 'service') NOT NULL,
+  listing_id BIGINT UNSIGNED NOT NULL,
+  listing_title VARCHAR(150) NOT NULL,
+  gateway_reference VARCHAR(40) NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  currency CHAR(3) NOT NULL DEFAULT 'ZAR',
+  payment_status ENUM('pending', 'paid', 'failed') NOT NULL DEFAULT 'pending',
+  checkout_token_hash CHAR(64) NULL,
+  checkout_expires_at DATETIME NULL,
+  payfast_payment_id VARCHAR(100) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_marketplace_purchase_reference (gateway_reference),
+  UNIQUE KEY uq_marketplace_purchase_checkout_token (checkout_token_hash),
+  UNIQUE KEY uq_marketplace_purchase_payfast_id (payfast_payment_id),
+  KEY idx_marketplace_purchases_investor (investor_id, created_at),
+  KEY idx_marketplace_purchases_listing (listing_type, listing_id),
+  KEY idx_marketplace_purchases_status (payment_status, created_at),
+  CONSTRAINT fk_marketplace_purchase_investor
+    FOREIGN KEY (investor_id) REFERENCES investors (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS communities (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   name VARCHAR(120) NOT NULL,
@@ -234,7 +260,7 @@ CREATE TABLE IF NOT EXISTS bursaries (
 
 CREATE TABLE IF NOT EXISTS entrepreneurial_posts (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  author_role ENUM('lecturer', 'admin') NOT NULL,
+  author_role ENUM('lecturer', 'admin', 'investor') NOT NULL,
   author_id BIGINT UNSIGNED NOT NULL,
   title VARCHAR(200) NOT NULL,
   body TEXT NOT NULL,
@@ -339,6 +365,25 @@ CREATE TABLE IF NOT EXISTS idea_interest_payments (
   KEY idx_idea_interest_payments_status (payment_status, created_at),
   CONSTRAINT fk_idea_interest_payment_interest
     FOREIGN KEY (interest_id) REFERENCES idea_interests (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS auction_offers (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  idea_id BIGINT UNSIGNED NOT NULL,
+  investor_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  message VARCHAR(2000) NOT NULL DEFAULT '',
+  offer_status ENUM('pending', 'accepted', 'rejected') NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  accepted_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_auction_offer_idea_investor (idea_id, investor_id),
+  KEY idx_auction_offers_idea_status (idea_id, offer_status, created_at),
+  CONSTRAINT fk_auction_offer_idea
+    FOREIGN KEY (idea_id) REFERENCES business_ideas (id) ON DELETE CASCADE,
+  CONSTRAINT fk_auction_offer_investor
+    FOREIGN KEY (investor_id) REFERENCES investors (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 INSERT INTO communities (name, description)

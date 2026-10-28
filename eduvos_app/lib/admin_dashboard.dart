@@ -132,25 +132,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 ),
                 Card(
                   child: ListTile(
-                    key: const ValueKey('admin-chats-button'),
-                    leading: const Icon(Icons.forum_outlined),
-                    title: const Text('Chats'),
-                    subtitle: const Text(
-                      'Continue private marketplace conversations.',
-                    ),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ChatInboxPage(
-                          token: widget.token,
-                          role: _profile['role'] as String? ?? 'admin',
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Card(
-                  child: ListTile(
                     key: const ValueKey('admin-idea-fees-button'),
                     leading: const Icon(Icons.payments_outlined),
                     title: const Text('Review Tank admin fees'),
@@ -176,8 +157,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) =>
-                            TankPage(token: widget.token, canPost: false),
+                        builder: (_) => TankPage(
+                          token: widget.token,
+                          canPost: false,
+                          showMyPosts: false,
+                        ),
                       ),
                     ),
                   ),

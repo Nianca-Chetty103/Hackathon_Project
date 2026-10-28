@@ -46,6 +46,10 @@ function marketplace_chat_participant(PDO $connection, array $account, int $chat
 
 function community_chat_member(PDO $connection, array $account, int $communityId): bool
 {
+    if ($account['account_role'] === 'investor') {
+        return false;
+    }
+
     $statement = $connection->prepare(
         'SELECT id FROM community_memberships
          WHERE community_id = :community_id
@@ -161,7 +165,8 @@ try {
              FROM communities c
              INNER JOIN community_memberships mine ON mine.community_id = c.id
              WHERE mine.account_role = :account_role
-               AND mine.account_id = :account_id'
+               AND mine.account_id = :account_id
+               AND mine.account_role != \'investor\''
         );
         $communityStatement->execute([
             'account_role' => $account['account_role'],

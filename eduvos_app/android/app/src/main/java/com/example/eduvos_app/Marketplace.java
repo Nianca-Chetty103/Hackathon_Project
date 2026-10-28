@@ -72,6 +72,12 @@ final class Marketplace {
             body.put("action", "delete");
             copyString(data, body, "type");
             copyString(data, body, "id");
+        } else if ("purchase".equals(operation)) {
+            method = "POST";
+            body = new JSONObject();
+            body.put("action", "purchase");
+            copyString(data, body, "type");
+            copyString(data, body, "id");
         } else if (!"list".equals(operation)) {
             throw new IllegalArgumentException("Unknown Marketplace operation.");
         }

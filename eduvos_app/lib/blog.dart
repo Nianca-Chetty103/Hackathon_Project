@@ -17,7 +17,10 @@ class _BlogPageState extends State<BlogPage> {
   bool _isLoading = true;
   String? _error;
 
-  bool get _canPost => widget.role == 'lecturer' || widget.role == 'admin';
+  bool get _canPost =>
+      widget.role == 'lecturer' ||
+      widget.role == 'admin' ||
+      widget.role == 'investor';
   bool get _canEngage => widget.role == 'student';
 
   @override
@@ -86,6 +89,67 @@ class _BlogPageState extends State<BlogPage> {
     }
   }
 
+  Future<void> _editPost(Map<String, dynamic> post) async {
+    final edited = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => _AdvicePostDialog(
+        initialTitle: post['title'] as String? ?? '',
+        initialBody: post['body'] as String? ?? '',
+      ),
+    );
+    if (edited == null || !mounted) return;
+    try {
+      await FeatureApi.updateBlogPost(
+        token: widget.token,
+        postId: post['id'] as int,
+        title: edited['title']!,
+        body: edited['body']!,
+      );
+      await _loadPosts();
+      if (mounted && _error == null) {
+        _showMessage('Your advice post has been updated.');
+      }
+    } on FeatureApiException catch (error) {
+      _showMessage(error.message);
+    }
+  }
+
+  Future<void> _deletePost(Map<String, dynamic> post) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete advice post?'),
+        content: Text(
+          'Delete "${post['title']}"? This will also remove its comments and likes.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('confirm-delete-advice-post'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await FeatureApi.deleteBlogPost(
+        token: widget.token,
+        postId: post['id'] as int,
+      );
+      await _loadPosts();
+      if (mounted && _error == null) {
+        _showMessage('Your advice post has been deleted.');
+      }
+    } on FeatureApiException catch (error) {
+      _showMessage(error.message);
+    }
+  }
+
   Future<void> _toggleLike(int postId) async {
     try {
       await FeatureApi.toggleBlogReaction(token: widget.token, postId: postId);
@@ -141,6 +205,12 @@ class _BlogPageState extends State<BlogPage> {
                     _AdvicePostCard(
                       post: post,
                       canEngage: _canEngage,
+                      onEdit: post['can_edit'] == true
+                          ? () => _editPost(post)
+                          : null,
+                      onDelete: post['can_delete'] == true
+                          ? () => _deletePost(post)
+                          : null,
                       onLike: () => _toggleLike(post['id'] as int),
                       onQuestion: () => _addQuestion(post['id'] as int),
                     ),
@@ -155,12 +225,16 @@ class _AdvicePostCard extends StatelessWidget {
   const _AdvicePostCard({
     required this.post,
     required this.canEngage,
+    required this.onEdit,
+    required this.onDelete,
     required this.onLike,
     required this.onQuestion,
   });
 
   final Map<String, dynamic> post;
   final bool canEngage;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final VoidCallback onLike;
   final VoidCallback onQuestion;
 
@@ -177,10 +251,37 @@ class _AdvicePostCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              post['title'] as String? ?? '',
-              style: Theme.of(context).textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    post['title'] as String? ?? '',
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                if (onEdit != null || onDelete != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (onEdit != null)
+                        IconButton(
+                          key: ValueKey('edit-advice-post-${post['id']}'),
+                          tooltip: 'Edit advice post',
+                          onPressed: onEdit,
+                          icon: const Icon(Icons.edit_outlined),
+                        ),
+                      if (onDelete != null)
+                        IconButton(
+                          key: ValueKey('delete-advice-post-${post['id']}'),
+                          tooltip: 'Delete advice post',
+                          onPressed: onDelete,
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                    ],
+                  ),
+              ],
             ),
             const SizedBox(height: 6),
             Text('By ${post['author'] ?? 'Eduvos'}'),
@@ -228,7 +329,10 @@ class _AdvicePostCard extends StatelessWidget {
 }
 
 class _AdvicePostDialog extends StatefulWidget {
-  const _AdvicePostDialog();
+  const _AdvicePostDialog({this.initialTitle = '', this.initialBody = ''});
+
+  final String initialTitle;
+  final String initialBody;
 
   @override
   State<_AdvicePostDialog> createState() => _AdvicePostDialogState();
@@ -236,8 +340,15 @@ class _AdvicePostDialog extends StatefulWidget {
 
 class _AdvicePostDialogState extends State<_AdvicePostDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _title = TextEditingController();
-  final _body = TextEditingController();
+  late final TextEditingController _title;
+  late final TextEditingController _body;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: widget.initialTitle);
+    _body = TextEditingController(text: widget.initialBody);
+  }
 
   @override
   void dispose() {
@@ -249,7 +360,11 @@ class _AdvicePostDialogState extends State<_AdvicePostDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Write entrepreneurial advice'),
+      title: Text(
+        widget.initialTitle.isEmpty
+            ? 'Write entrepreneurial advice'
+            : 'Edit entrepreneurial advice',
+      ),
       content: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -292,7 +407,7 @@ class _AdvicePostDialogState extends State<_AdvicePostDialog> {
               'body': _body.text.trim(),
             });
           },
-          child: const Text('Publish'),
+          child: Text(widget.initialTitle.isEmpty ? 'Publish' : 'Save changes'),
         ),
       ],
     );
