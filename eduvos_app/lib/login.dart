@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'AdminDashboard.dart';
-import 'Home.dart';
+import 'admin_dashboard.dart';
+import 'home.dart';
 import 'auth_api.dart';
 
 const _navy = Color(0xFF172B4D);

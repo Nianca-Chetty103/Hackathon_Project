@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'Login.dart';
+import 'login.dart';
 
 void main() {
   runApp(const EduvosApp());

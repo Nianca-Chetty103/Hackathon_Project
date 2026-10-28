@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'community.dart';
 import 'marketplace.dart';
-import 'ProfileSettings.dart';
+import 'profile_settings.dart';
 import 'tank.dart';
 import 'bursaries.dart';
 import 'blog.dart';

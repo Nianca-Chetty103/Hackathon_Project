@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'chats.dart';
-import 'ProfileSettings.dart';
+import 'profile_settings.dart';
 import 'marketplace.dart';
 import 'tank.dart';
 import 'bursaries.dart';
